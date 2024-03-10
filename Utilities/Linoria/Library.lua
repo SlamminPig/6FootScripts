@@ -1544,7 +1544,7 @@ do
             TextSize = 14;
             Text = Text;
             TextWrapped = DoesWrap or false,
-            TextXAlignment = Enum.TextXAlignment.Left;
+            TextXAlignment = Enum.TextXAlignment.Center;
             ZIndex = 5;
             Parent = Container;
         });
