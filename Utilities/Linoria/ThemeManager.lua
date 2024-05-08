@@ -144,7 +144,7 @@ local ThemeManager = {} do
 			return false, 'no config file is selected'
 		end
 		
-		local file = self.Folder .. '/themes/' .. name .. '.json'
+		local file = self.Folder .. '/themes/' .. name
 		if not isfile(file) then return false, 'invalid file' end
 
 		local success, decoded = pcall(delfile, file)
@@ -184,10 +184,13 @@ local ThemeManager = {} do
 
 		groupbox:AddInput('ThemeManager_CustomThemeName', { Text = 'Custom theme name' })
 		groupbox:AddButton('Create theme', function() 
-			self:SaveCustomTheme(getgenv().Linoria.Options.ThemeManager_CustomThemeName.Value)
-
-			getgenv().Linoria.Options.ThemeManager_CustomThemeList:SetValues(self:ReloadCustomThemes())
-			getgenv().Linoria.Options.ThemeManager_CustomThemeList:SetValue(nil)
+			if Options.ThemeManager_CustomThemeName.Value ~= '' then
+				self:SaveCustomTheme(getgenv().Linoria.Options.ThemeManager_CustomThemeName.Value..'.json')
+				
+				self.Library:Notify('Created theme')
+				getgenv().Linoria.Options.ThemeManager_CustomThemeList:SetValues(self:ReloadCustomThemes())
+				getgenv().Linoria.Options.ThemeManager_CustomThemeList:SetValue(nil)
+			end
 		end)
 
 		groupbox:AddDivider()
@@ -197,10 +200,10 @@ local ThemeManager = {} do
 			self:ApplyTheme(getgenv().Linoria.Options.ThemeManager_CustomThemeList.Value) 
 		end)
 		groupbox:AddButton('Overwrite theme', function()
-			self:SaveCustomTheme(getgenv().Linoria.Options.ThemeManager_CustomThemeName.Value)
-		end)
-		groupbox:AddButton('Delete theme', function()
-			local name = getgenv().Linoria.Options.ThemeManager_CustomThemeName.Value
+			self:SaveCustomTheme(getgenv().Linoria.Options.ThemeManager_CustomThemeList.Value)
+			self.Library:Notify('Saved theme')
+		end):AddButton('Delete theme', function()
+			local name = getgenv().Linoria.Options.ThemeManager_CustomThemeList.Value
 
 			local success, err = self:Delete(name)
 			if not success then
@@ -265,7 +268,7 @@ local ThemeManager = {} do
 		if file:gsub(' ', '') == '' then
 			return self.Library:Notify('Invalid file name for theme (empty)', 3)
 		end
-
+		
 		local theme = {}
 		local fields = { "FontColor", "MainColor", "AccentColor", "BackgroundColor", "OutlineColor", "VideoLink" }
 
@@ -276,8 +279,8 @@ local ThemeManager = {} do
 				theme[field] = getgenv().Linoria.Options[field].Value:ToHex()
 			end
 		end
-
-		writefile(self.Folder .. '/themes/' .. file .. '.json', httpService:JSONEncode(theme))
+		
+		writefile(self.Folder .. '/themes/' .. file, httpService:JSONEncode(theme))
 	end
 
 	function ThemeManager:ReloadCustomThemes()
