@@ -1569,7 +1569,7 @@ do
 			TextSize = 14;
 			Text = Text;
 			TextWrapped = DoesWrap or false,
-			TextXAlignment = Enum.TextXAlignment.Center;
+			TextXAlignment = Enum.TextXAlignment.Left;
 			ZIndex = 5;
 			Parent = Container;
 		});
@@ -4004,7 +4004,7 @@ function Library:CreateWindow(...)
 	if Library.IsMobile then
 		local ToggleUIOuter = Library:Create('Frame', {
 			BorderColor3 = Color3.new(0, 0, 0);
-			Position = UDim2.new(0.008, 0, 0.018, 0);
+			Position = UDim2.new(0.008, 0, 0.187, 0);
 			Size = UDim2.new(0, 77, 0, 30);
 			ZIndex = 200;
 			Visible = true;
@@ -4074,7 +4074,7 @@ function Library:CreateWindow(...)
 	-- Lock
 	local LockUIOuter = Library:Create('Frame', {
 			BorderColor3 = Color3.new(0, 0, 0);
-			Position = UDim2.new(0.008, 0, 0.075, 0);
+			Position = UDim2.new(0.008, 0, 0.244, 0);
 			Size = UDim2.new(0, 77, 0, 30);
 			ZIndex = 200;
 			Visible = true;
