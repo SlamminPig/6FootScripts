@@ -2112,7 +2112,7 @@ do
 		end
 
 		function Toggle:Display()
-			if IsKrampus then setthreadcaps(8) end
+			if IsKrampus or setthreadcaps then setthreadcaps(8) end
 			ToggleInner.BackgroundColor3 = Toggle.Value and Library.AccentColor or Library.MainColor;
 			ToggleInner.BorderColor3 = Toggle.Value and Library.AccentColorDark or Library.OutlineColor;
 
@@ -4004,7 +4004,7 @@ function Library:CreateWindow(...)
 	if Library.IsMobile then
 		local ToggleUIOuter = Library:Create('Frame', {
 			BorderColor3 = Color3.new(0, 0, 0);
-			Position = UDim2.new(0.008, 0, 0.244, 0);
+			Position = UDim2.new(0.008, 0, 0.301, 0);
 			Size = UDim2.new(0, 77, 0, 30);
 			ZIndex = 200;
 			Visible = true;
@@ -4074,7 +4074,7 @@ function Library:CreateWindow(...)
 	-- Lock
 	local LockUIOuter = Library:Create('Frame', {
 			BorderColor3 = Color3.new(0, 0, 0);
-			Position = UDim2.new(0.008, 0, 0.301, 0);
+			Position = UDim2.new(0.008, 0, 0.358, 0);
 			Size = UDim2.new(0, 77, 0, 30);
 			ZIndex = 200;
 			Visible = true;
