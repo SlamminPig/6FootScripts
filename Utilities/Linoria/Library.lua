@@ -2681,7 +2681,7 @@ do
 				);
 
 				local Selected;
-
+			
 				if Info.Multi then
 					Selected = Dropdown.Value[Value];
 				else
@@ -2698,11 +2698,27 @@ do
 					ButtonLabel.TextColor3 = Selected and Library.AccentColor or Library.FontColor;
 					Library.RegistryMap[ButtonLabel].Properties.TextColor3 = Selected and 'AccentColor' or 'FontColor';
 				end;
+				
+				local isScrolling = false
+				
+				Scrolling.InputBegan:Connect(function(input)
+					if input.UserInputType == Enum.UserInputType.Touch then
+						isScrolling = true
+					end
+				end)
+
+				Scrolling.InputEnded:Connect(function(input)
+					if input.UserInputType == Enum.UserInputType.Touch then
+						task.wait(.1)
+						isScrolling = false
+					end
+				end)
 
 				ButtonLabel.InputBegan:Connect(function(Input)
+					if isScrolling then return end
 					if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then
 						local Try = not Selected;
-
+						
 						if Dropdown:GetActiveValues() == 1 and (not Try) and (not Info.AllowNull) then
 						else
 							if Info.Multi then
