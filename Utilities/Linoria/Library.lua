@@ -2585,7 +2585,7 @@ do
 			TopImage = 'rbxasset://textures/ui/Scroll/scroll-middle.png',
 			BottomImage = 'rbxasset://textures/ui/Scroll/scroll-middle.png',
 
-			ScrollBarThickness = 3,
+			ScrollBarThickness = Library.IsMobile and 6 or 3, -- original 3
 			ScrollBarImageColor3 = Library.AccentColor,
 		});
 
