@@ -4086,11 +4086,11 @@ function Library:CreateWindow(...)
 			return buttonOuter
 		end
 
-		local ToggleUIOuter = createButton("Toggle UI", UDim2.new(0.008, 0, 0.701, 0), function()
+		local ToggleUIOuter = createButton("Toggle UI", Library.IsMobile and UDim2.new(0.008, 0, 0.65, 0) or UDim2.new(0.008, 0, 0.701, 0), function()
 			task.spawn(Library.Toggle)
 		end)
 
-		local LockUIOuter = createButton("Lock UI", UDim2.new(0.008, 0, 0.758, 0), function()
+		local LockUIOuter = createButton("Lock UI", Library.IsMobile and UDim2.new(0.008, 0, 0.72, 0) or UDim2.new(0.008, 0, 0.758, 0), function()
 			Library.CantDragForced = not Library.CantDragForced
 		end)
 
@@ -4107,11 +4107,11 @@ function Library:CreateWindow(...)
 			end
 		end
 
-		local ScrollUpButton = createButton("▲", UDim2.new(0.008, 0, 0.815, 0), function()
+		local ScrollUpButton = createButton("▲", Library.IsMobile and UDim2.new(0.008, 0, 0.79, 0) or UDim2.new(0.008, 0, 0.815, 0), function()
 			scrollUI(-50)
 		end)
 
-		local ScrollDownButton = createButton("▼", UDim2.new(0.008, 0, 0.872, 0), function()
+		local ScrollDownButton = createButton("▼", Library.IsMobile and UDim2.new(0.008, 0, 0.86, 0) or UDim2.new(0.008, 0, 0.872, 0), function()
 			scrollUI(50)
 		end)
 
