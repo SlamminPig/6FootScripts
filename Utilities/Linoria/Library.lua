@@ -3504,7 +3504,7 @@ function Library:CreateWindow(...)
 			ZIndex = 2;
 			Parent = TabFrame;
 		});
-
+		
 		Library:Create('UIListLayout', {
 			Padding = UDim.new(0, 8);
 			FillDirection = Enum.FillDirection.Vertical;
@@ -4018,147 +4018,106 @@ function Library:CreateWindow(...)
 	end));
 
 	if Library.IsMobile then
-		local ToggleUIOuter = Library:Create('Frame', {
-			BorderColor3 = Color3.new(0, 0, 0);
-			Position = UDim2.new(0.008, 0, 0.701, 0);
-			Size = UDim2.new(0, 77, 0, 30);
-			ZIndex = 200;
-			Visible = true;
-			Name = 'FrameToggle';
-			Parent = ScreenGui;
-		});
-	
-		local ToggleUIInner = Library:Create('Frame', {
-			BackgroundColor3 = Library.MainColor;
-			BorderColor3 = Library.AccentColor;
-			BorderMode = Enum.BorderMode.Inset;
-			Size = UDim2.new(1, 0, 1, 0);
-			ZIndex = 201;
-			Parent = ToggleUIOuter;
-		});
-	
-		Library:AddToRegistry(ToggleUIInner, {
-			BorderColor3 = 'AccentColor';
-		});
-	
-		local ToggleUIInnerFrame = Library:Create('Frame', {
-			BackgroundColor3 = Color3.new(1, 1, 1);
-			BorderSizePixel = 0;
-			Position = UDim2.new(0, 1, 0, 1);
-			Size = UDim2.new(1, -2, 1, -2);
-			ZIndex = 202;
-			Parent = ToggleUIInner;
-		});
-	
-		local ToggleUIGradient = Library:Create('UIGradient', {
-			Color = ColorSequence.new({
-				ColorSequenceKeypoint.new(0, Library:GetDarkerColor(Library.MainColor)),
-				ColorSequenceKeypoint.new(1, Library.MainColor),
+		local function createButton(text, position, callback)
+			local buttonOuter = Library:Create('Frame', {
+				BorderColor3 = Color3.new(0, 0, 0);
+				Position = position;
+				Size = UDim2.new(0, 77, 0, 30);
+				ZIndex = 200;
+				Visible = true;
+				Parent = ScreenGui;
 			});
-			Rotation = -90;
-			Parent = ToggleUIInnerFrame;
-		});
-	
-		Library:AddToRegistry(ToggleUIGradient, {
-			Color = function()
-				return ColorSequence.new({
+
+			local buttonInner = Library:Create('Frame', {
+				BackgroundColor3 = Library.MainColor;
+				BorderColor3 = Library.AccentColor;
+				BorderMode = Enum.BorderMode.Inset;
+				Size = UDim2.new(1, 0, 1, 0);
+				ZIndex = 201;
+				Parent = buttonOuter;
+			});
+
+			Library:AddToRegistry(buttonInner, {
+				BorderColor3 = 'AccentColor';
+			});
+
+			local buttonInnerFrame = Library:Create('Frame', {
+				BackgroundColor3 = Color3.new(1, 1, 1);
+				BorderSizePixel = 0;
+				Position = UDim2.new(0, 1, 0, 1);
+				Size = UDim2.new(1, -2, 1, -2);
+				ZIndex = 202;
+				Parent = buttonInner;
+			});
+
+			local buttonGradient = Library:Create('UIGradient', {
+				Color = ColorSequence.new({
 					ColorSequenceKeypoint.new(0, Library:GetDarkerColor(Library.MainColor)),
 					ColorSequenceKeypoint.new(1, Library.MainColor),
 				});
-			end
-		});
-	
-		local ToggleUIButton = Library:Create('TextButton', {
-			Position = UDim2.new(0, 5, 0, 0);
-			Size = UDim2.new(1, -4, 1, 0);
-			BackgroundTransparency = 1;
-			Font = Library.Font;
-			Text = "Toggle UI";
-			TextColor3 = Library.FontColor;
-			TextSize = 14;
-			TextXAlignment = Enum.TextXAlignment.Left;
-			TextStrokeTransparency = 0;
-			ZIndex = 203;
-			Parent = ToggleUIInnerFrame;
-		});
-	
-		Library:MakeDraggable(ToggleUIOuter);
+				Rotation = -90;
+				Parent = buttonInnerFrame;
+			});
 
-		ToggleUIButton.MouseButton1Down:Connect(function()
+			Library:AddToRegistry(buttonGradient, {
+				Color = function()
+					return ColorSequence.new({
+						ColorSequenceKeypoint.new(0, Library:GetDarkerColor(Library.MainColor)),
+						ColorSequenceKeypoint.new(1, Library.MainColor),
+					});
+				end
+			});
+
+			local button = Library:Create('TextButton', {
+				Position = UDim2.new(0, 5, 0, 0);
+				Size = UDim2.new(1, -4, 1, 0);
+				BackgroundTransparency = 1;
+				Font = Library.Font;
+				Text = text;
+				TextColor3 = Library.FontColor;
+				TextSize = 14;
+				TextXAlignment = Enum.TextXAlignment.Left;
+				TextStrokeTransparency = 0;
+				ZIndex = 203;
+				Parent = buttonInnerFrame;
+			});
+
+			button.MouseButton1Down:Connect(callback)
+			return buttonOuter
+		end
+
+		local ToggleUIOuter = createButton("Toggle UI", Library.IsMobile and UDim2.new(0.008, 0, 0.65, 0) or UDim2.new(0.008, 0, 0.701, 0), function()
 			task.spawn(Library.Toggle)
 		end)
 
-	-- Lock
-	local LockUIOuter = Library:Create('Frame', {
-			BorderColor3 = Color3.new(0, 0, 0);
-			Position = UDim2.new(0.008, 0, 0.758, 0);
-			Size = UDim2.new(0, 77, 0, 30);
-			ZIndex = 200;
-			Visible = true;
-			Name = 'FrameLock';
-			Parent = ScreenGui;
-		});
-	
-		local LockUIInner = Library:Create('Frame', {
-			BackgroundColor3 = Library.MainColor;
-			BorderColor3 = Library.AccentColor;
-			BorderMode = Enum.BorderMode.Inset;
-			Size = UDim2.new(1, 0, 1, 0);
-			ZIndex = 201;
-			Parent = LockUIOuter;
-		});
-	
-		Library:AddToRegistry(LockUIInner, {
-			BorderColor3 = 'AccentColor';
-		});
-	
-		local LockUIInnerFrame = Library:Create('Frame', {
-			BackgroundColor3 = Color3.new(1, 1, 1);
-			BorderSizePixel = 0;
-			Position = UDim2.new(0, 1, 0, 1);
-			Size = UDim2.new(1, -2, 1, -2);
-			ZIndex = 202;
-			Parent = LockUIInner;
-		});
-	
-		local LockUIGradient = Library:Create('UIGradient', {
-			Color = ColorSequence.new({
-				ColorSequenceKeypoint.new(0, Library:GetDarkerColor(Library.MainColor)),
-				ColorSequenceKeypoint.new(1, Library.MainColor),
-			});
-			Rotation = -90;
-			Parent = LockUIInnerFrame;
-		});
-	
-		Library:AddToRegistry(LockUIGradient, {
-			Color = function()
-				return ColorSequence.new({
-					ColorSequenceKeypoint.new(0, Library:GetDarkerColor(Library.MainColor)),
-					ColorSequenceKeypoint.new(1, Library.MainColor),
-				});
-			end
-		});
-	
-		local LockUIButton = Library:Create('TextButton', {
-			Position = UDim2.new(0, 5, 0, 0);
-			Size = UDim2.new(1, -4, 1, 0);
-			BackgroundTransparency = 1;
-			Font = Library.Font;
-			Text = "Lock UI";
-			TextColor3 = Library.FontColor;
-			TextSize = 14;
-			TextXAlignment = Enum.TextXAlignment.Left;
-			TextStrokeTransparency = 0;
-			ZIndex = 203;
-			Parent = LockUIInnerFrame;
-		});
-	
-		Library:MakeDraggable(LockUIOuter);
-		
-		LockUIButton.MouseButton1Down:Connect(function()
-			Library.CantDragForced = not Library.CantDragForced;
+		local LockUIOuter = createButton("Lock UI", Library.IsMobile and UDim2.new(0.008, 0, 0.72, 0) or UDim2.new(0.008, 0, 0.758, 0), function()
+			Library.CantDragForced = not Library.CantDragForced
+			Library:Notify(Library.CantDragForced and 'Locked UI' or 'Unlocked UI', 2)
 		end)
-	end;
+
+		local function scrollUI(amount)
+			local Sides = {}
+			if Library.Window then
+				Sides = Library.Window.Tabs[Library.ActiveTab]:GetSides()
+			end
+
+			for _, Side in pairs(Sides) do
+				if typeof(Side) == "Instance" and Side:IsA("ScrollingFrame") then
+					Side.CanvasPosition = Side.CanvasPosition + Vector2.new(0, amount)
+				end
+			end
+		end
+
+		local ScrollUpButton = createButton("▲", Library.IsMobile and UDim2.new(0.008, 0, 0.79, 0) or UDim2.new(0.008, 0, 0.815, 0), function()
+			scrollUI(-50)
+		end)
+
+		local ScrollDownButton = createButton("▼", Library.IsMobile and UDim2.new(0.008, 0, 0.86, 0) or UDim2.new(0.008, 0, 0.872, 0), function()
+			scrollUI(50)
+		end)
+
+	end
+
 
 	if Config.AutoShow then task.spawn(Library.Toggle) end
 
