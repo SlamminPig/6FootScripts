@@ -4076,7 +4076,7 @@ function Library:CreateWindow(...)
 				Text = text;
 				TextColor3 = Library.FontColor;
 				TextSize = 14;
-				TextXAlignment = Enum.TextXAlignment.Left;
+				TextXAlignment = Enum.TextXAlignment.Center;
 				TextStrokeTransparency = 0;
 				ZIndex = 203;
 				Parent = buttonInnerFrame;
