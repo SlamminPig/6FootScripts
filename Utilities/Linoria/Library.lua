@@ -4085,12 +4085,44 @@ function Library:CreateWindow(...)
 			button.MouseButton1Down:Connect(callback)
 			return buttonOuter
 		end
+		
 
-		local ToggleUIOuter = createButton("Toggle UI", Library.IsMobile and UDim2.new(0.008, 0, 0.65, 0) or UDim2.new(0.008, 0, 0.701, 0), function()
+		local ToggleUIOuter
+		local LockUIOuter
+		local ScrollUpButton
+		local ScrollDownButton
+		local ToggleSideButton
+		local ToggleSideTextButton
+
+		local sideButtonsVisible = true
+		
+		local function toggleSideButtons()
+			sideButtonsVisible = not sideButtonsVisible
+			ToggleUIOuter.Visible = sideButtonsVisible
+			LockUIOuter.Visible = sideButtonsVisible
+			ScrollUpButton.Visible = sideButtonsVisible
+			ScrollDownButton.Visible = sideButtonsVisible
+
+			if ToggleSideTextButton then
+				ToggleSideTextButton.Text = sideButtonsVisible and 'Hide' or 'Show'
+			end
+		end
+
+		ToggleSideButton = createButton('Hide', UDim2.new(0.008, 0, 0.58, 0), function()
+			task.spawn(toggleSideButtons)
+		end)
+
+		ToggleSideTextButton = ToggleSideButton:FindFirstChildWhichIsA('TextButton', true)
+
+		if ToggleSideTextButton then
+			ToggleSideTextButton.Text = 'Hide' 
+		end
+		
+		ToggleUIOuter = createButton('Toggle UI', Library.IsMobile and UDim2.new(0.008, 0, 0.65, 0) or UDim2.new(0.008, 0, 0.701, 0), function()
 			task.spawn(Library.Toggle)
 		end)
 
-		local LockUIOuter = createButton("Lock UI", Library.IsMobile and UDim2.new(0.008, 0, 0.72, 0) or UDim2.new(0.008, 0, 0.758, 0), function()
+		LockUIOuter = createButton('Lock UI', Library.IsMobile and UDim2.new(0.008, 0, 0.72, 0) or UDim2.new(0.008, 0, 0.758, 0), function()
 			Library.CantDragForced = not Library.CantDragForced
 			Library:Notify(Library.CantDragForced and 'Locked UI' or 'Unlocked UI', 2)
 		end)
@@ -4100,19 +4132,18 @@ function Library:CreateWindow(...)
 			if Library.Window then
 				Sides = Library.Window.Tabs[Library.ActiveTab]:GetSides()
 			end
-
 			for _, Side in pairs(Sides) do
-				if typeof(Side) == "Instance" and Side:IsA("ScrollingFrame") then
+				if typeof(Side) == 'nstance' and Side:IsA('ScrollingFrame') then
 					Side.CanvasPosition = Side.CanvasPosition + Vector2.new(0, amount)
 				end
 			end
 		end
 
-		local ScrollUpButton = createButton("▲", Library.IsMobile and UDim2.new(0.008, 0, 0.79, 0) or UDim2.new(0.008, 0, 0.815, 0), function()
+		ScrollUpButton = createButton('▲', Library.IsMobile and UDim2.new(0.008, 0, 0.79, 0) or UDim2.new(0.008, 0, 0.815, 0), function()
 			scrollUI(-50)
 		end)
 
-		local ScrollDownButton = createButton("▼", Library.IsMobile and UDim2.new(0.008, 0, 0.86, 0) or UDim2.new(0.008, 0, 0.872, 0), function()
+		ScrollDownButton = createButton('▼', Library.IsMobile and UDim2.new(0.008, 0, 0.86, 0) or UDim2.new(0.008, 0, 0.872, 0), function()
 			scrollUI(50)
 		end)
 
