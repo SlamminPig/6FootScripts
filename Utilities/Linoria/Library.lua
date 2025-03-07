@@ -4133,7 +4133,7 @@ function Library:CreateWindow(...)
 				Sides = Library.Window.Tabs[Library.ActiveTab]:GetSides()
 			end
 			for _, Side in pairs(Sides) do
-				if typeof(Side) == 'nstance' and Side:IsA('ScrollingFrame') then
+				if typeof(Side) == 'Instance' and Side:IsA('ScrollingFrame') then
 					Side.CanvasPosition = Side.CanvasPosition + Vector2.new(0, amount)
 				end
 			end
