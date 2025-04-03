@@ -298,20 +298,22 @@ local SaveManager = {} do
 			end
 
 			self.Library:Notify(string.format('Overwrote config %q', name))
-		end)
-		
-		section:AddButton('Delete config', function()
-			local name = getgenv().Linoria.Options.SaveManager_ConfigList.Value
+		end):AddButton({
+			Text = 'Delete config';
+			Func = function()
+				local name = getgenv().Linoria.Options.SaveManager_ConfigList.Value
 
-			local success, err = self:Delete(name)
-			if not success then
-				return self.Library:Notify('Failed to delete config: ' .. err)
-			end
+				local success, err = self:Delete(name)
+				if not success then
+					return self.Library:Notify('Failed to delete config: ' .. err)
+				end
 
-			self.Library:Notify(string.format('Deleted config %q', name))
-			getgenv().Linoria.Options.SaveManager_ConfigList:SetValues(self:RefreshConfigList())
-			getgenv().Linoria.Options.SaveManager_ConfigList:SetValue(nil)
-		end)
+				self.Library:Notify(string.format('Deleted config %q', name))
+				getgenv().Linoria.Options.SaveManager_ConfigList:SetValues(self:RefreshConfigList())
+				getgenv().Linoria.Options.SaveManager_ConfigList:SetValue(nil)
+			end;
+			DoubleClick = true;
+		})
 
 		section:AddButton('Refresh list', function()
 			getgenv().Linoria.Options.SaveManager_ConfigList:SetValues(self:RefreshConfigList())
