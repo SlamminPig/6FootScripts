@@ -357,6 +357,7 @@ return {
         "Baron Voidling Lv 400B",
         "Baron Voidling Lv 700B",
         "Cthulhu Lv 25Qd",
+        "Unholy Apparition Lv 1Qd",
         "Cvezkly, Scion of Matter Lv 10T",
         "Denizen of Plague Lv 170B",
         "Eerie Jester Lv 20T",
