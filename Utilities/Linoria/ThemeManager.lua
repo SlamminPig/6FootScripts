@@ -18,6 +18,17 @@ local ThemeManager = {} do
 		['Kiriot Hub'] 		= { 9, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"30333b","AccentColor":"ffaa00","BackgroundColor":"1a1c20","OutlineColor":"141414"}') },
 		['Green'] 			= { 10, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"141414","AccentColor":"00ff8b","BackgroundColor":"1c1c1c","OutlineColor":"3c3c3c"}') },
 		['Dracula'] 		= { 11, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"232533","AccentColor":"6271a5","BackgroundColor":"1b1c27","OutlineColor":"7c82a7"}') },
+	
+		['Solarized Dark'] 	= { 12, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"002b36","AccentColor":"b58900","BackgroundColor":"073642","OutlineColor":"586e75"}') },
+		['Cyberpunk'] 		= { 13, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"2a0034","AccentColor":"ff0090","BackgroundColor":"1a001f","OutlineColor":"3a0044"}') },
+		['Monokai'] 		= { 14, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"272822","AccentColor":"f92672","BackgroundColor":"1e1e1e","OutlineColor":"75715e"}') },
+		['Nord'] 			= { 15, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"3b4252","AccentColor":"88c0d0","BackgroundColor":"2e3440","OutlineColor":"4c566a"}') },
+		['Oceanic'] 		= { 16, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"1b2b34","AccentColor":"6699cc","BackgroundColor":"0f1924","OutlineColor":"4f5b66"}') },
+		['Rose Pine'] 		= { 17, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"232136","AccentColor":"eb6f92","BackgroundColor":"191724","OutlineColor":"31748f"}') },
+		['Hacker'] 			= { 18, httpService:JSONDecode('{"FontColor":"00ff00","MainColor":"101010","AccentColor":"00cc00","BackgroundColor":"080808","OutlineColor":"222222"}') },
+		['Midnight'] 		= { 19, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"121212","AccentColor":"304ffe","BackgroundColor":"0a0a0a","OutlineColor":"252525"}') },
+		['Lavender'] 		= { 20, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"3d2a4d","AccentColor":"c792ea","BackgroundColor":"2a1e37","OutlineColor":"4b3a5a"}') },
+
 	}
 
 	function ApplyBackgroundVideo(webmLink)
