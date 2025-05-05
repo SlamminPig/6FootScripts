@@ -29,6 +29,21 @@ local ThemeManager = {} do
 		['Midnight'] 		= { 19, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"121212","AccentColor":"304ffe","BackgroundColor":"0a0a0a","OutlineColor":"252525"}') },
 		['Lavender'] 		= { 20, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"3d2a4d","AccentColor":"c792ea","BackgroundColor":"2a1e37","OutlineColor":"4b3a5a"}') },
 
+		['Void Runner'] 	 = { 21, httpService:JSONDecode('{"FontColor":"d2d2ff","MainColor":"0c001a","AccentColor":"7d00ff","BackgroundColor":"00000a","OutlineColor":"1a0033"}') },
+		['Circuit Core'] 	 = { 22, httpService:JSONDecode('{"FontColor":"00ffcc","MainColor":"001a1a","AccentColor":"00ffaa","BackgroundColor":"000f0f","OutlineColor":"005555"}') },
+		['Dream Pop'] 		 = { 23, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"ffb5e8","AccentColor":"c7ceea","BackgroundColor":"ffdac1","OutlineColor":"e0bbe4"}') },
+		['Moss & Stone'] 	 = { 24, httpService:JSONDecode('{"FontColor":"d4e157","MainColor":"2e342e","AccentColor":"a2c523","BackgroundColor":"1c1f1c","OutlineColor":"4c584c"}') },
+		['Noir Film'] 		 = { 25, httpService:JSONDecode('{"FontColor":"eeeeee","MainColor":"111111","AccentColor":"888888","BackgroundColor":"000000","OutlineColor":"2a2a2a"}') },
+		['Glass UI'] 		 = { 26, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"1a1a1a","AccentColor":"80dfff","BackgroundColor":"0a0a0a","OutlineColor":"80dfff"}') },
+		['Arcade Wave'] 	 = { 27, httpService:JSONDecode('{"FontColor":"ffff99","MainColor":"331144","AccentColor":"ff3399","BackgroundColor":"1a0022","OutlineColor":"661177"}') },
+		['Storm Cloud'] 	 = { 28, httpService:JSONDecode('{"FontColor":"dfe6e9","MainColor":"2d3436","AccentColor":"74b9ff","BackgroundColor":"1e272e","OutlineColor":"636e72"}') },
+		['Duskwood'] 		 = { 29, httpService:JSONDecode('{"FontColor":"e8e6e3","MainColor":"2c2b27","AccentColor":"c0a97a","BackgroundColor":"1a1917","OutlineColor":"3b3a36"}') },
+		['Inkdrop'] 		 = { 30, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"0f0f14","AccentColor":"2e2e91","BackgroundColor":"06060a","OutlineColor":"1c1c3a"}') },
+		['Tundra Bloom'] 	 = { 31, httpService:JSONDecode('{"FontColor":"eaf6ff","MainColor":"5e81ac","AccentColor":"a3be8c","BackgroundColor":"2e3440","OutlineColor":"4c566a"}') },
+		['Molten Core'] 	 = { 32, httpService:JSONDecode('{"FontColor":"ffeaa7","MainColor":"2d0900","AccentColor":"ff6f00","BackgroundColor":"120400","OutlineColor":"3e1300"}') },
+		['Bioluminescent'] 	 = { 33, httpService:JSONDecode('{"FontColor":"ccffe6","MainColor":"003322","AccentColor":"00ff99","BackgroundColor":"001a12","OutlineColor":"00664d"}') },
+		['Mechanical Soul']  = { 34, httpService:JSONDecode('{"FontColor":"e0e0e0","MainColor":"3b3b3b","AccentColor":"d4af37","BackgroundColor":"1c1c1c","OutlineColor":"5e5e5e"}') },
+	
 	}
 
 	function ApplyBackgroundVideo(webmLink)
