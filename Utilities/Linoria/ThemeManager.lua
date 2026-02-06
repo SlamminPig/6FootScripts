@@ -42,7 +42,7 @@ local ThemeManager = {} do
 		['Tundra Bloom'] 	 = { 31, httpService:JSONDecode('{"FontColor":"eaf6ff","MainColor":"5e81ac","AccentColor":"a3be8c","BackgroundColor":"2e3440","OutlineColor":"4c566a"}') },
 		['Molten Core'] 	 = { 32, httpService:JSONDecode('{"FontColor":"ffeaa7","MainColor":"2d0900","AccentColor":"ff6f00","BackgroundColor":"120400","OutlineColor":"3e1300"}') },
 		['Bioluminescent'] 	 = { 33, httpService:JSONDecode('{"FontColor":"ccffe6","MainColor":"003322","AccentColor":"00ff99","BackgroundColor":"001a12","OutlineColor":"00664d"}') },
-		['Mechanical Soul']  = { 34, httpService:JSONDecode('{"FontColor":"e0e0e0","MainColor":"3b3b3b","AccentColor":"d4af37","BackgroundColor":"1c1c1c","OutlineColor":"5e5e5e"}') },
+		['Mechanical Soul']= { 34, httpService:JSONDecode('{"FontColor":"e0e0e0","MainColor":"3b3b3b","AccentColor":"d4af37","BackgroundColor":"1c1c1c","OutlineColor":"5e5e5e"}') },
 	
 		['Abyssal'] 		 = { 35, httpService:JSONDecode('{"FontColor":"ade4ff","MainColor":"0a0f1d","AccentColor":"0077be","BackgroundColor":"02050a","OutlineColor":"1a2a45"}') },
 		['Coffee'] 			 = { 36, httpService:JSONDecode('{"FontColor":"fdf0d5","MainColor":"3c2f2f","AccentColor":"be9b7b","BackgroundColor":"251e1e","OutlineColor":"4b3832"}') },
@@ -91,7 +91,6 @@ local ThemeManager = {} do
 	function ThemeManager:ApplyTheme(theme)
 		local customThemeData = self:GetCustomTheme(theme)
 		local data = customThemeData or self.BuiltInThemes[theme]
-
 		if not data then return end
 
 		-- custom themes are just regular dictionaries instead of an array with { index, dictionary }
@@ -139,19 +138,18 @@ local ThemeManager = {} do
 	end
 
 	function ThemeManager:ThemeUpdate()
-		-- This allows us to force apply themes without loading the themes tab :)
 		if self.Library.InnerVideoBackground ~= nil then
 			self.Library.InnerVideoBackground.Visible = false
 		end
 		
-		local options = { "FontColor", "MainColor", "AccentColor", "BackgroundColor", "OutlineColor", "VideoLink" }
+		local options = { 'FontColor', 'MainColor', 'AccentColor', 'BackgroundColor', 'OutlineColor', 'VideoLink' }
 		for i, field in next, options do
-			if Options and Options[field] then
+			if Options and Options[field] and Options[field].Value ~= nil then
 				self.Library[field] = Options[field].Value
-				-- if field == "VideoLink" then
-					-- ApplyBackgroundVideo(Options[field].Value)
-				-- end
 			end
+			-- if field == "VideoLink" then
+				-- ApplyBackgroundVideo(Options[field].Value)
+			-- end
 		end
 
 		self.Library.AccentColorDark = self.Library:GetDarkerColor(self.Library.AccentColor);
@@ -230,10 +228,17 @@ local ThemeManager = {} do
 
 		groupbox:AddInput('ThemeManager_CustomThemeName', { Text = 'Custom theme name' })
 		groupbox:AddButton('Create theme', function() 
-			self:SaveCustomTheme(Options.ThemeManager_CustomThemeName.Value)
+			local name = Options.ThemeManager_CustomThemeName.Value
+			if name:gsub(' ', '') == '' then
+				return self.Library:Notify('Invalid file name for theme (empty)', 3)
+			end
 
-			Options.ThemeManager_CustomThemeList:SetValues(self:ReloadCustomThemes())
-			Options.ThemeManager_CustomThemeList:SetValue(nil)
+			self:SaveCustomTheme(name)
+
+			local newThemes = self:ReloadCustomThemes()
+			Options.ThemeManager_CustomThemeList:SetValues(newThemes)
+			
+			Options.ThemeManager_CustomThemeList:SetValue(name)
 		end)
 
 		groupbox:AddDivider()
@@ -243,12 +248,18 @@ local ThemeManager = {} do
 			local name = Options.ThemeManager_CustomThemeList.Value
 			if name and name ~= '' then
 				self:ApplyTheme(name)
+				self.Library:Notify(string.format('Loaded theme %q', name), 3)
 			else
 				self.Library:Notify('Please select a theme from the list!', 3)
 			end
 		end)
 		groupbox:AddButton('Overwrite theme', function()
-			self:SaveCustomTheme(Options.ThemeManager_CustomThemeName.Value)
+			local name = Options.ThemeManager_CustomThemeList.Value
+			if name and name ~= '' then
+				self:SaveCustomTheme(name)
+			else
+				self.Library:Notify('Please select a theme from the list to overwrite!', 3)
+			end
 		end):AddButton('Delete theme', function()
 			local name = Options.ThemeManager_CustomThemeList.Value
 
@@ -301,11 +312,12 @@ local ThemeManager = {} do
 	end
 
 	function ThemeManager:GetCustomTheme(file)
-		if not file:find('%.json$') then
-			file = file .. '.json'
+		local fileName = file
+		if not fileName:find('%.json$') then
+			fileName = fileName .. '.json'
 		end
 		
-		local path = self.Folder .. '/themes/' .. file
+		local path = self.Folder .. '/themes/' .. fileName
 		if not isfile(path) then return nil end
 
 		local data = readfile(path)
