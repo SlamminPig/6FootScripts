@@ -44,6 +44,10 @@ local ThemeManager = {} do
 		['Bioluminescent'] 	 = { 33, httpService:JSONDecode('{"FontColor":"ccffe6","MainColor":"003322","AccentColor":"00ff99","BackgroundColor":"001a12","OutlineColor":"00664d"}') },
 		['Mechanical Soul']  = { 34, httpService:JSONDecode('{"FontColor":"e0e0e0","MainColor":"3b3b3b","AccentColor":"d4af37","BackgroundColor":"1c1c1c","OutlineColor":"5e5e5e"}') },
 	
+		['Abyssal'] 		 = { 35, httpService:JSONDecode('{"FontColor":"ade4ff","MainColor":"0a0f1d","AccentColor":"0077be","BackgroundColor":"02050a","OutlineColor":"1a2a45"}') },
+		['Coffee'] 			 = { 36, httpService:JSONDecode('{"FontColor":"fdf0d5","MainColor":"3c2f2f","AccentColor":"be9b7b","BackgroundColor":"251e1e","OutlineColor":"4b3832"}') },
+		['Frost'] 			 = { 37, httpService:JSONDecode('{"FontColor":"e0fbff","MainColor":"22333b","AccentColor":"c9f2c7","BackgroundColor":"0a100d","OutlineColor":"3d5a80"}') },
+		['Crimson'] 		 = { 38, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"1a0a0a","AccentColor":"ff0000","BackgroundColor":"0d0505","OutlineColor":"3d1414"}') },
 	}
 
 	function ApplyBackgroundVideo(webmLink)
@@ -96,21 +100,38 @@ local ThemeManager = {} do
 		end
 		
 		local scheme = data[2]
-		for idx, col in next, customThemeData or scheme do
-			if idx ~= "VideoLink" then
-				self.Library[idx] = Color3.fromHex(col)
+		-- for idx, col in next, customThemeData or scheme do
+			-- if idx ~= "VideoLink" then
+				-- self.Library[idx] = Color3.fromHex(col)
 				
-				if Options[idx] then
-					Options[idx]:SetValueRGB(Color3.fromHex(col))
+				-- if Options[idx] then
+					-- Options[idx]:SetValueRGB(Color3.fromHex(col))
+				-- end
+			-- else
+				-- self.Library[idx] = col
+				
+				-- if Options[idx] then
+					-- Options[idx]:SetValue(col)
+				-- end
+				
+				-- --ApplyBackgroundVideo(col)
+			-- end
+		-- end
+		
+		for idx, col in next, customThemeData or scheme do
+			if idx ~= 'VideoLink' then
+				local success, result = pcall(Color3.fromHex, col)
+				if success then
+					self.Library[idx] = result
+					if Options[idx] then
+						Options[idx]:SetValueRGB(result)
+					end
 				end
 			else
 				self.Library[idx] = col
-				
 				if Options[idx] then
 					Options[idx]:SetValue(col)
 				end
-				
-				--ApplyBackgroundVideo(col)
 			end
 		end
 
@@ -219,12 +240,21 @@ local ThemeManager = {} do
 
 		groupbox:AddDropdown('ThemeManager_CustomThemeList', { Text = 'Custom themes', Values = self:ReloadCustomThemes(), AllowNull = true, Default = 1 })
 		groupbox:AddButton('Load theme', function() 
-			self:ApplyTheme(Options.ThemeManager_CustomThemeList.Value) 
+			local name = Options.ThemeManager_CustomThemeList.Value
+			if name and name ~= '' then
+				self:ApplyTheme(name)
+			else
+				self.Library:Notify('Please select a theme from the list!', 3)
+			end
 		end)
 		groupbox:AddButton('Overwrite theme', function()
 			self:SaveCustomTheme(Options.ThemeManager_CustomThemeName.Value)
 		end):AddButton('Delete theme', function()
-			local name = Options.ThemeManager_CustomThemeName.Value
+			local name = Options.ThemeManager_CustomThemeList.Value
+
+			if not name or name == '' then
+				return self.Library:Notify('Please select a theme to delete', 3)
+			end
 
 			local success, err = self:Delete(name)
 			if not success then
@@ -232,6 +262,7 @@ local ThemeManager = {} do
 			end
 
 			self.Library:Notify(string.format('Deleted theme %q', name))
+			
 			Options.ThemeManager_CustomThemeList:SetValues(self:ReloadCustomThemes())
 			Options.ThemeManager_CustomThemeList:SetValue(nil)
 		end)
@@ -270,19 +301,17 @@ local ThemeManager = {} do
 	end
 
 	function ThemeManager:GetCustomTheme(file)
-		local path = self.Folder .. '/themes/' .. file
-		if not isfile(path) then
-			return nil
+		if not file:find('%.json$') then
+			file = file .. '.json'
 		end
+		
+		local path = self.Folder .. '/themes/' .. file
+		if not isfile(path) then return nil end
 
 		local data = readfile(path)
 		local success, decoded = pcall(httpService.JSONDecode, httpService, data)
 		
-		if not success then
-			return nil
-		end
-
-		return decoded
+		return success and decoded or nil
 	end
 
 	function ThemeManager:SaveCustomTheme(file)
@@ -291,45 +320,65 @@ local ThemeManager = {} do
 		end
 
 		local theme = {}
-		local fields = { "FontColor", "MainColor", "AccentColor", "BackgroundColor", "OutlineColor", "VideoLink" }
+		local fields = { 'FontColor', 'MainColor', 'AccentColor', 'BackgroundColor', 'OutlineColor', 'VideoLink' }
 
 		for _, field in next, fields do
-			if field == "VideoLink" then
-				theme[field] = Options[field].Value
-			else
-				theme[field] = Options[field].Value:ToHex()
+			-- Check if the option exists in the Options table before indexing .Value
+			if Options[field] then
+				if field == 'VideoLink' then
+					theme[field] = Options[field].Value
+				else
+					theme[field] = Options[field].Value:ToHex()
+				end
 			end
 		end
 
 		writefile(self.Folder .. '/themes/' .. file .. '.json', httpService:JSONEncode(theme))
+		self.Library:Notify(string.format('Saved custom theme %q', file), 3)
 	end
+
+	-- function ThemeManager:ReloadCustomThemes()
+		-- local list = listfiles(self.Folder .. '/themes')
+
+		-- local out = {}
+		-- for i = 1, #list do
+			-- local file = list[i]
+			-- if file:sub(-5) == '.json' then
+				-- -- i hate this but it has to be done ...
+
+				-- local pos = file:find('.json', 1, true)
+				-- local char = file:sub(pos, pos)
+
+				-- while char ~= '/' and char ~= '\\' and char ~= '' do
+					-- pos = pos - 1
+					-- char = file:sub(pos, pos)
+				-- end
+
+				-- if char == '/' or char == '\\' then
+					-- table.insert(out, file:sub(pos + 1))
+				-- end
+			-- end
+		-- end
+
+		-- return out
+	-- end
 
 	function ThemeManager:ReloadCustomThemes()
 		local list = listfiles(self.Folder .. '/themes')
-
 		local out = {}
+
 		for i = 1, #list do
 			local file = list[i]
-			if file:sub(-5) == '.json' then
-				-- i hate this but it has to be done ...
-
-				local pos = file:find('.json', 1, true)
-				local char = file:sub(pos, pos)
-
-				while char ~= '/' and char ~= '\\' and char ~= '' do
-					pos = pos - 1
-					char = file:sub(pos, pos)
-				end
-
-				if char == '/' or char == '\\' then
-					table.insert(out, file:sub(pos + 1))
-				end
+			-- This grabs everything after the last slash and before .json
+			local name = file:match('([^\\/]+)%.json$')
+			if name then
+				table.insert(out, name)
 			end
 		end
 
 		return out
 	end
-
+	
 	function ThemeManager:SetLibrary(lib)
 		self.Library = lib
 	end
