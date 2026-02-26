@@ -12,7 +12,16 @@ local Mouse = LocalPlayer:GetMouse();
 
 local ProtectGui = protectgui or (syn and syn.protect_gui) or (function() end);
 local GetHUI = gethui or (function() return CoreGui end);
-local IsKrampus = ((identifyexecutor or (function() return "" end))():lower() == "krampus");
+local weirdExecutors = {'Velocity'}
+--local IsKrampus = ((identifyexecutor or (function() return "" end))():lower() == "krampus");
+
+local function isWeirdExecutor()
+	if not identifyexecutor then return false end
+	if table.find(weirdExecutors, tostring(identifyexecutor())) then
+		return true
+	end
+	return false
+end
 
 local ScreenGui = Instance.new('ScreenGui');
 ProtectGui(ScreenGui);
@@ -2087,7 +2096,8 @@ do
 		end
 
 		function Toggle:Display()
-			if IsKrampus or setthreadcaps then setthreadcaps(8) end
+			--if IsKrampus or setthreadcaps then setthreadcaps(8) end
+			if isWeirdExecutor() and setthreadidentity then setthreadidentity(8) end
 			ToggleInner.BackgroundColor3 = Toggle.Value and Library.AccentColor or Library.MainColor;
 			ToggleInner.BorderColor3 = Toggle.Value and Library.AccentColorDark or Library.OutlineColor;
 
