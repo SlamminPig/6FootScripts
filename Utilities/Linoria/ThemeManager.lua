@@ -1,3 +1,15 @@
+local weirdExecutors = {'Velocity'}
+
+local function isWeirdExecutor()
+	if not identifyexecutor then return false end
+	if table.find(weirdExecutors, tostring(identifyexecutor())) then
+		return true
+	end
+	return false
+end
+
+if isWeirdExecutor() then return end
+
 local httpService = game:GetService('HttpService')
 local httprequest = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
 local getassetfunc = getcustomasset or getsynasset
