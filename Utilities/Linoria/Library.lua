@@ -23,6 +23,8 @@ local function isWeirdExecutor()
 	return false
 end
 
+if isWeirdExecutor() and setthreadidentity then setthreadidentity(8) end
+
 local ScreenGui = Instance.new('ScreenGui');
 ProtectGui(ScreenGui);
 
@@ -2097,7 +2099,6 @@ do
 
 		function Toggle:Display()
 			--if IsKrampus or setthreadcaps then setthreadcaps(8) end
-			if isWeirdExecutor() and setthreadidentity then setthreadidentity(8) end
 			ToggleInner.BackgroundColor3 = Toggle.Value and Library.AccentColor or Library.MainColor;
 			ToggleInner.BorderColor3 = Toggle.Value and Library.AccentColorDark or Library.OutlineColor;
 
