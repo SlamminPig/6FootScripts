@@ -23,8 +23,6 @@ local function isWeirdExecutor()
 	return false
 end
 
-if isWeirdExecutor() and setthreadidentity then setthreadidentity(8) end
-
 local ScreenGui = Instance.new('ScreenGui');
 ProtectGui(ScreenGui);
 
@@ -3130,7 +3128,7 @@ function Library:Notify(Text, Time, SoundId)
 	local XSize, YSize = Library:GetTextBounds(Text, Library.Font, 14);
 
 	YSize = YSize + 7
-
+	if isWeirdExecutor() and setthreadidentity then setthreadidentity(8) end	
 	local NotifyOuter = Library:Create('Frame', {
 		BorderColor3 = Color3.new(0, 0, 0);
 		Position = UDim2.new(0, 100, 0, 10);
