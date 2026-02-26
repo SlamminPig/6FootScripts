@@ -1,3 +1,15 @@
+local weirdExecutors = {'Velocity'}
+
+local function isWeirdExecutor()
+	if not identifyexecutor then return false end
+	if table.find(weirdExecutors, tostring(identifyexecutor())) then
+		return true
+	end
+	return false
+end
+
+if isWeirdExecutor() then return end
+
 local httpService = game:GetService('HttpService')
 
 local SaveManager = {} do
