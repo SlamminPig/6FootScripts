@@ -23,6 +23,11 @@ local function isWeirdExecutor()
 	return false
 end
 
+local OldLibrary = getgenv().Library;
+if type(OldLibrary) == 'table' and type(OldLibrary.Unload) == 'function' and not OldLibrary.Unloaded then
+	pcall(OldLibrary.Unload, OldLibrary);
+end;
+
 local ScreenGui = Instance.new('ScreenGui');
 ProtectGui(ScreenGui);
 
@@ -72,7 +77,6 @@ local Library = {
 	CanDrag = true;
 	CantDragForced = false;
 	ShowCustomCursor = false; 
-	VideoLink = "";
 	TotalTabs = 0;
 };
 
@@ -569,21 +573,160 @@ function Library:GiveSignal(Signal)
 end
 
 function Library:Unload()
+	if Library.Unloaded then
+		return
+	end
+	Library.Unloaded = true
+
+	for _, Callback in ipairs(Library.UnloadCallbacks) do
+		local Success, Error = pcall(Callback)
+		if not Success then
+			warn(Error)
+		end
+	end
+	table.clear(Library.UnloadCallbacks)
 
 	for Idx = #Library.Signals, 1, -1 do
 		local Connection = table.remove(Library.Signals, Idx)
-		Connection:Disconnect()
+		pcall(Connection.Disconnect, Connection)
 	end
 
-	if Library.OnUnload then
-		Library.OnUnload()
+	local Current = coroutine.running()
+	for _, Thread in ipairs(Library.Threads) do
+		if Thread ~= Current then
+			pcall(task.cancel, Thread)
+		end
 	end
+	table.clear(Library.Threads)
 
 	ScreenGui:Destroy()
+
+	if getgenv().Library == Library then
+		getgenv().Library = nil
+	end
+end
+
+Library.UnloadCallbacks = {}
+Library.Threads = {}
+
+function Library:Connect(Signal, Callback)
+	local Connection = Signal:Connect(Callback)
+	if Library.Unloaded then
+		Connection:Disconnect()
+		return Connection
+	end
+	table.insert(Library.Signals, Connection)
+	return Connection
+end
+
+function Library:Spawn(Callback, ...)
+	local Thread = task.spawn(Callback, ...)
+	if Library.Unloaded then
+		pcall(task.cancel, Thread)
+		return Thread
+	end
+	for Idx = #Library.Threads, 1, -1 do
+		if coroutine.status(Library.Threads[Idx]) == 'dead' then
+			table.remove(Library.Threads, Idx)
+		end
+	end
+	table.insert(Library.Threads, Thread)
+	return Thread
+end
+
+function Library:Loop(Interval, Callback)
+	return Library:Spawn(function()
+		while not Library.Unloaded do
+			local Success, Error = pcall(Callback)
+			if not Success then
+				warn(Error)
+			end
+			task.wait(Interval)
+		end
+	end)
 end
 
 function Library:OnUnload(Callback)
-	Library.OnUnload = Callback
+	table.insert(Library.UnloadCallbacks, Callback)
+end
+
+local function CleanTask(Task)
+	local Kind = typeof(Task)
+	if Kind == 'RBXScriptConnection' then
+		Task:Disconnect()
+	elseif Kind == 'function' then
+		Task()
+	elseif Kind == 'thread' then
+		task.cancel(Task)
+	elseif Kind == 'Instance' then
+		Task:Destroy()
+	elseif type(Task) == 'table' then
+		if type(Task.Destroy) == 'function' then
+			Task:Destroy()
+		elseif type(Task.Disconnect) == 'function' then
+			Task:Disconnect()
+		end
+	end
+end
+
+function Library:Maid()
+	local Tasks = {}
+	local Maid = {}
+
+	function Maid:GiveTask(Task)
+		local Index = #Tasks + 1
+		Tasks[Index] = Task
+		return Index
+	end
+
+	function Maid:DoCleaning()
+		for Key, Task in pairs(Tasks) do
+			if typeof(Task) == 'RBXScriptConnection' then
+				Tasks[Key] = nil
+				Task:Disconnect()
+			end
+		end
+
+		local Key, Task = next(Tasks)
+		while Task ~= nil do
+			Tasks[Key] = nil
+			local Success, Error = pcall(CleanTask, Task)
+			if not Success then
+				warn(Error)
+			end
+			Key, Task = next(Tasks)
+		end
+	end
+
+	Maid.Destroy = Maid.DoCleaning
+
+	setmetatable(Maid, {
+		__index = function(_, Key)
+			return Tasks[Key]
+		end,
+		__newindex = function(_, Key, Task)
+			local Old = Tasks[Key]
+			if Old == Task then
+				return
+			end
+			Tasks[Key] = Task
+			if Old ~= nil then
+				local Success, Error = pcall(CleanTask, Old)
+				if not Success then
+					warn(Error)
+				end
+			end
+		end,
+	})
+
+	if Library.Unloaded then
+		return Maid
+	end
+	Library:OnUnload(function()
+		Maid:DoCleaning()
+	end)
+
+	return Maid
 end
 
 Library:GiveSignal(ScreenGui.DescendantRemoving:Connect(function(Instance)
@@ -3124,7 +3267,36 @@ function Library:SetWatermark(Text)
 	Library.WatermarkText.Text = Text;
 end;
 
+Library.NotifyTimestamps = true;
+Library.NotifyTimeColor = Color3.fromRGB(200, 200, 200);
+Library.NotifyTimeSeparator = ' | ';
+
+local function getTime()
+	if getgenv().getTime then
+		return getgenv().getTime();
+	end;
+	local t = os.date('*t');
+	local hour = t.hour % 12;
+	if hour == 0 then
+		hour = 12;
+	end;
+	return string.format('%d:%02d %s', hour, t.min, t.hour >= 12 and 'PM' or 'AM');
+end;
+
+local function escapeRich(Str)
+	return (Str:gsub('&', '&amp;'):gsub('<', '&lt;'):gsub('>', '&gt;'));
+end;
+
 function Library:Notify(Text, Time, SoundId)
+	Text = tostring(Text);
+	local DisplayText = escapeRich(Text);
+	if Library.NotifyTimestamps then
+		local Stamp = getTime();
+		Stamp = Stamp .. Library.NotifyTimeSeparator;
+		Text = Stamp .. Text;
+		DisplayText = string.format('<font color="#%s">%s</font>%s', Library.NotifyTimeColor:ToHex(), escapeRich(Stamp), DisplayText);
+	end;
+
 	local XSize, YSize = Library:GetTextBounds(Text, Library.Font, 14);
 
 	YSize = YSize + 7
@@ -3182,7 +3354,8 @@ function Library:Notify(Text, Time, SoundId)
 	local NotifyLabel = Library:CreateLabel({
 		Position = UDim2.new(0, 4, 0, 0);
 		Size = UDim2.new(1, -4, 1, 0);
-		Text = Text;
+		Text = DisplayText;
+		RichText = true;
 		TextXAlignment = Enum.TextXAlignment.Left;
 		TextSize = 14;
 		ZIndex = 103;
@@ -3213,19 +3386,39 @@ function Library:Notify(Text, Time, SoundId)
 
 	pcall(NotifyOuter.TweenSize, NotifyOuter, UDim2.new(0, XSize + 8 + 4, 0, YSize), 'Out', 'Quad', 0.4, true);
 
+	local Closed = false;
+	local function Close()
+		if Closed then
+			return;
+		end;
+		Closed = true;
+		pcall(NotifyOuter.TweenSize, NotifyOuter, UDim2.new(0, 0, 0, YSize), 'Out', 'Quad', 0.4, true);
+		task.delay(0.4, function()
+			NotifyOuter:Destroy();
+		end);
+	end;
+
+	local Dismiss = Library:Create('TextButton', {
+		BackgroundTransparency = 1;
+		Text = '';
+		Size = UDim2.new(1, 0, 1, 0);
+		ZIndex = 105;
+		Parent = NotifyOuter;
+	});
+	Dismiss.MouseButton1Click:Connect(Close);
+
 	task.spawn(function()
-		if typeof(Time) == "Instance" then
+		if typeof(Time) == 'Instance' then
 			Time.Destroying:Wait();
+		elseif type(Time) == 'number' and Time <= 0 then
+			return;
 		else
 			task.wait(Time or 5);
-		end
-
-		pcall(NotifyOuter.TweenSize, NotifyOuter, UDim2.new(0, 0, 0, YSize), 'Out', 'Quad', 0.4, true);
-
-		task.wait(0.4);
-
-		NotifyOuter:Destroy();
+		end;
+		Close();
 	end);
+
+	return { Close = Close };
 end;
 
 function Library:CreateWindow(...)
@@ -3382,20 +3575,6 @@ function Library:CreateWindow(...)
 		ZIndex = 2;
 		Parent = MainSectionInner;
 	});
-
-	local InnerVideoBackground = Library:Create('VideoFrame', {
-		BackgroundColor3 = Library.MainColor;
-		BorderMode = Enum.BorderMode.Inset;
-		BorderSizePixel = 0;
-		Position = UDim2.new(0, 1, 0, 1);
-		Size = UDim2.new(1, -2, 1, -2);
-		ZIndex = 2;
-		Visible = false;
-		Volume = 0;
-		Looped = true;
-		Parent = TabContainer;
-	});
-	Library.InnerVideoBackground = InnerVideoBackground;
 
 	Library:AddToRegistry(TabContainer, {
 		BackgroundColor3 = 'MainColor';
@@ -4144,8 +4323,8 @@ local function OnPlayerChange()
 	end;
 end;
 
-Players.PlayerAdded:Connect(OnPlayerChange);
-Players.PlayerRemoving:Connect(OnPlayerChange);
+Library:GiveSignal(Players.PlayerAdded:Connect(OnPlayerChange));
+Library:GiveSignal(Players.PlayerRemoving:Connect(OnPlayerChange));
 
 getgenv().Library = Library
 return Library
