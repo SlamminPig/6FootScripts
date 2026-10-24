@@ -1,135 +1,58 @@
 local httpService = game:GetService('HttpService')
-local httprequest = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
-local getassetfunc = getcustomasset or getsynasset
 local ThemeManager = {} do
 	ThemeManager.Folder = 'LinoriaLibSettings'
-	-- if not isfolder(ThemeManager.Folder) then makefolder(ThemeManager.Folder) end
 
 	ThemeManager.Library = nil
 	ThemeManager.BuiltInThemes = {
-		['Default'] 		= { 1, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"1c1c1c","AccentColor":"0055ff","BackgroundColor":"141414","OutlineColor":"323232"}') },
-		['BBot'] 			= { 2, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"1e1e1e","AccentColor":"7e48a3","BackgroundColor":"232323","OutlineColor":"141414"}') },
-		['Fatality']		= { 3, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"1e1842","AccentColor":"c50754","BackgroundColor":"191335","OutlineColor":"3c355d"}') },
-		['Jester'] 			= { 4, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"242424","AccentColor":"db4467","BackgroundColor":"1c1c1c","OutlineColor":"373737"}') },
-		['Mint'] 			= { 5, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"242424","AccentColor":"3db488","BackgroundColor":"1c1c1c","OutlineColor":"373737"}') },
-		['Tokyo Night'] 	= { 6, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"191925","AccentColor":"6759b3","BackgroundColor":"16161f","OutlineColor":"323232"}') },
-		['Ubuntu'] 			= { 7, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"3e3e3e","VAccentColor":"e2581e","BackgroundColor":"323232","OutlineColor":"191919"}') },
-		['Quartz'] 			= { 8, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"232330","AccentColor":"426e87","BackgroundColor":"1d1b26","OutlineColor":"27232f"}') },
-		['Kiriot Hub'] 		= { 9, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"30333b","AccentColor":"ffaa00","BackgroundColor":"1a1c20","OutlineColor":"141414"}') },
-		['Green'] 			= { 10, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"141414","AccentColor":"00ff8b","BackgroundColor":"1c1c1c","OutlineColor":"3c3c3c"}') },
-		['Dracula'] 		= { 11, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"232533","AccentColor":"6271a5","BackgroundColor":"1b1c27","OutlineColor":"7c82a7"}') },
-	
-		['Solarized Dark'] 	= { 12, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"002b36","AccentColor":"b58900","BackgroundColor":"073642","OutlineColor":"586e75"}') },
-		['Cyberpunk'] 		= { 13, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"2a0034","AccentColor":"ff0090","BackgroundColor":"1a001f","OutlineColor":"3a0044"}') },
-		['Monokai'] 		= { 14, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"272822","AccentColor":"f92672","BackgroundColor":"1e1e1e","OutlineColor":"75715e"}') },
-		['Nord'] 			= { 15, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"3b4252","AccentColor":"88c0d0","BackgroundColor":"2e3440","OutlineColor":"4c566a"}') },
-		['Oceanic'] 		= { 16, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"1b2b34","AccentColor":"6699cc","BackgroundColor":"0f1924","OutlineColor":"4f5b66"}') },
-		['Rose Pine'] 		= { 17, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"232136","AccentColor":"eb6f92","BackgroundColor":"191724","OutlineColor":"31748f"}') },
-		['Hacker'] 			= { 18, httpService:JSONDecode('{"FontColor":"00ff00","MainColor":"101010","AccentColor":"00cc00","BackgroundColor":"080808","OutlineColor":"222222"}') },
-		['Midnight'] 		= { 19, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"121212","AccentColor":"304ffe","BackgroundColor":"0a0a0a","OutlineColor":"252525"}') },
-		['Lavender'] 		= { 20, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"3d2a4d","AccentColor":"c792ea","BackgroundColor":"2a1e37","OutlineColor":"4b3a5a"}') },
-
-		['Void Runner'] 	 = { 21, httpService:JSONDecode('{"FontColor":"d2d2ff","MainColor":"0c001a","AccentColor":"7d00ff","BackgroundColor":"00000a","OutlineColor":"1a0033"}') },
-		['Circuit Core'] 	 = { 22, httpService:JSONDecode('{"FontColor":"00ffcc","MainColor":"001a1a","AccentColor":"00ffaa","BackgroundColor":"000f0f","OutlineColor":"005555"}') },
-		['Dream Pop'] 		 = { 23, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"ffb5e8","AccentColor":"c7ceea","BackgroundColor":"ffdac1","OutlineColor":"e0bbe4"}') },
-		['Moss & Stone'] 	 = { 24, httpService:JSONDecode('{"FontColor":"d4e157","MainColor":"2e342e","AccentColor":"a2c523","BackgroundColor":"1c1f1c","OutlineColor":"4c584c"}') },
-		['Noir Film'] 		 = { 25, httpService:JSONDecode('{"FontColor":"eeeeee","MainColor":"111111","AccentColor":"888888","BackgroundColor":"000000","OutlineColor":"2a2a2a"}') },
-		['Glass UI'] 		 = { 26, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"1a1a1a","AccentColor":"80dfff","BackgroundColor":"0a0a0a","OutlineColor":"80dfff"}') },
-		['Arcade Wave'] 	 = { 27, httpService:JSONDecode('{"FontColor":"ffff99","MainColor":"331144","AccentColor":"ff3399","BackgroundColor":"1a0022","OutlineColor":"661177"}') },
-		['Storm Cloud'] 	 = { 28, httpService:JSONDecode('{"FontColor":"dfe6e9","MainColor":"2d3436","AccentColor":"74b9ff","BackgroundColor":"1e272e","OutlineColor":"636e72"}') },
-		['Duskwood'] 		 = { 29, httpService:JSONDecode('{"FontColor":"e8e6e3","MainColor":"2c2b27","AccentColor":"c0a97a","BackgroundColor":"1a1917","OutlineColor":"3b3a36"}') },
-		['Inkdrop'] 		 = { 30, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"0f0f14","AccentColor":"2e2e91","BackgroundColor":"06060a","OutlineColor":"1c1c3a"}') },
-		['Tundra Bloom'] 	 = { 31, httpService:JSONDecode('{"FontColor":"eaf6ff","MainColor":"5e81ac","AccentColor":"a3be8c","BackgroundColor":"2e3440","OutlineColor":"4c566a"}') },
-		['Molten Core'] 	 = { 32, httpService:JSONDecode('{"FontColor":"ffeaa7","MainColor":"2d0900","AccentColor":"ff6f00","BackgroundColor":"120400","OutlineColor":"3e1300"}') },
-		['Bioluminescent'] 	 = { 33, httpService:JSONDecode('{"FontColor":"ccffe6","MainColor":"003322","AccentColor":"00ff99","BackgroundColor":"001a12","OutlineColor":"00664d"}') },
-		['Mechanical Soul']= { 34, httpService:JSONDecode('{"FontColor":"e0e0e0","MainColor":"3b3b3b","AccentColor":"d4af37","BackgroundColor":"1c1c1c","OutlineColor":"5e5e5e"}') },
-	
-		['Abyssal'] 		 = { 35, httpService:JSONDecode('{"FontColor":"ade4ff","MainColor":"0a0f1d","AccentColor":"0077be","BackgroundColor":"02050a","OutlineColor":"1a2a45"}') },
-		['Coffee'] 			 = { 36, httpService:JSONDecode('{"FontColor":"fdf0d5","MainColor":"3c2f2f","AccentColor":"be9b7b","BackgroundColor":"251e1e","OutlineColor":"4b3832"}') },
-		['Frost'] 			 = { 37, httpService:JSONDecode('{"FontColor":"e0fbff","MainColor":"22333b","AccentColor":"c9f2c7","BackgroundColor":"0a100d","OutlineColor":"3d5a80"}') },
-		['Crimson'] 		 = { 38, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"1a0a0a","AccentColor":"ff0000","BackgroundColor":"0d0505","OutlineColor":"3d1414"}') },
+		['Default']         = { 1, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"1c1c1c","AccentColor":"0055ff","BackgroundColor":"141414","OutlineColor":"323232"}') },
+		['BBot']            = { 2, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"1e1e1e","AccentColor":"7e48a3","BackgroundColor":"232323","OutlineColor":"141414"}') },
+		['Fatality']        = { 3, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"1e1842","AccentColor":"c50754","BackgroundColor":"191335","OutlineColor":"3c355d"}') },
+		['Jester']          = { 4, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"242424","AccentColor":"db4467","BackgroundColor":"1c1c1c","OutlineColor":"373737"}') },
+		['Mint']            = { 5, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"242424","AccentColor":"3db488","BackgroundColor":"1c1c1c","OutlineColor":"373737"}') },
+		['Tokyo Night']     = { 6, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"191925","AccentColor":"6759b3","BackgroundColor":"16161f","OutlineColor":"323232"}') },
+		['Ubuntu']          = { 7, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"3e3e3e","AccentColor":"e2581e","BackgroundColor":"323232","OutlineColor":"191919"}') },
+		['Kiriot Hub']      = { 8, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"30333b","AccentColor":"ffaa00","BackgroundColor":"1a1c20","OutlineColor":"141414"}') },
+		['Dracula']         = { 9, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"232533","AccentColor":"6271a5","BackgroundColor":"1b1c27","OutlineColor":"7c82a7"}') },
+		['Solarized Dark']  = { 10, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"002b36","AccentColor":"b58900","BackgroundColor":"073642","OutlineColor":"586e75"}') },
+		['Cyberpunk']       = { 11, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"2a0034","AccentColor":"ff0090","BackgroundColor":"1a001f","OutlineColor":"3a0044"}') },
+		['Monokai']         = { 12, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"272822","AccentColor":"f92672","BackgroundColor":"1e1e1e","OutlineColor":"75715e"}') },
+		['Nord']            = { 13, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"3b4252","AccentColor":"88c0d0","BackgroundColor":"2e3440","OutlineColor":"4c566a"}') },
+		['Rose Pine']       = { 14, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"232136","AccentColor":"eb6f92","BackgroundColor":"191724","OutlineColor":"31748f"}') },
+		['Hacker']          = { 15, httpService:JSONDecode('{"FontColor":"00ff00","MainColor":"101010","AccentColor":"00cc00","BackgroundColor":"080808","OutlineColor":"222222"}') },
+		['Lavender']        = { 16, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"3d2a4d","AccentColor":"c792ea","BackgroundColor":"2a1e37","OutlineColor":"4b3a5a"}') },
+		['Void Runner']     = { 17, httpService:JSONDecode('{"FontColor":"d2d2ff","MainColor":"0c001a","AccentColor":"7d00ff","BackgroundColor":"00000a","OutlineColor":"1a0033"}') },
+		['Circuit Core']    = { 18, httpService:JSONDecode('{"FontColor":"00ffcc","MainColor":"001a1a","AccentColor":"00ffaa","BackgroundColor":"000f0f","OutlineColor":"005555"}') },
+		['Moss & Stone']    = { 19, httpService:JSONDecode('{"FontColor":"d4e157","MainColor":"2e342e","AccentColor":"a2c523","BackgroundColor":"1c1f1c","OutlineColor":"4c584c"}') },
+		['Noir Film']       = { 20, httpService:JSONDecode('{"FontColor":"eeeeee","MainColor":"111111","AccentColor":"888888","BackgroundColor":"000000","OutlineColor":"2a2a2a"}') },
+		['Glass UI']        = { 21, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"1a1a1a","AccentColor":"80dfff","BackgroundColor":"0a0a0a","OutlineColor":"80dfff"}') },
+		['Arcade Wave']     = { 22, httpService:JSONDecode('{"FontColor":"ffff99","MainColor":"331144","AccentColor":"ff3399","BackgroundColor":"1a0022","OutlineColor":"661177"}') },
+		['Storm Cloud']     = { 23, httpService:JSONDecode('{"FontColor":"dfe6e9","MainColor":"2d3436","AccentColor":"74b9ff","BackgroundColor":"1e272e","OutlineColor":"636e72"}') },
+		['Inkdrop']         = { 24, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"0f0f14","AccentColor":"2e2e91","BackgroundColor":"06060a","OutlineColor":"1c1c3a"}') },
+		['Tundra Bloom']    = { 25, httpService:JSONDecode('{"FontColor":"eaf6ff","MainColor":"5e81ac","AccentColor":"a3be8c","BackgroundColor":"2e3440","OutlineColor":"4c566a"}') },
+		['Molten Core']     = { 26, httpService:JSONDecode('{"FontColor":"ffeaa7","MainColor":"2d0900","AccentColor":"ff6f00","BackgroundColor":"120400","OutlineColor":"3e1300"}') },
+		['Bioluminescent']  = { 27, httpService:JSONDecode('{"FontColor":"ccffe6","MainColor":"003322","AccentColor":"00ff99","BackgroundColor":"001a12","OutlineColor":"00664d"}') },
+		['Mechanical Soul'] = { 28, httpService:JSONDecode('{"FontColor":"e0e0e0","MainColor":"3b3b3b","AccentColor":"d4af37","BackgroundColor":"1c1c1c","OutlineColor":"5e5e5e"}') },
+		['Abyssal']         = { 29, httpService:JSONDecode('{"FontColor":"ade4ff","MainColor":"0a0f1d","AccentColor":"0077be","BackgroundColor":"02050a","OutlineColor":"1a2a45"}') },
+		['Coffee']          = { 30, httpService:JSONDecode('{"FontColor":"fdf0d5","MainColor":"3c2f2f","AccentColor":"be9b7b","BackgroundColor":"251e1e","OutlineColor":"4b3832"}') },
+		['Frost']           = { 31, httpService:JSONDecode('{"FontColor":"e0fbff","MainColor":"22333b","AccentColor":"c9f2c7","BackgroundColor":"0a100d","OutlineColor":"3d5a80"}') },
+		['Crimson']         = { 32, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"1a0a0a","AccentColor":"ff0000","BackgroundColor":"0d0505","OutlineColor":"3d1414"}') },
+		['Sunset']          = { 33, httpService:JSONDecode('{"FontColor":"ffe9dc","MainColor":"2b1b2e","AccentColor":"ff7a45","BackgroundColor":"1c121f","OutlineColor":"4a2c4f"}') },
+		['Copper Teal']     = { 34, httpService:JSONDecode('{"FontColor":"e6f2f0","MainColor":"13262b","AccentColor":"e08a4f","BackgroundColor":"0b1a1e","OutlineColor":"24434a"}') },
+		['Royal']           = { 35, httpService:JSONDecode('{"FontColor":"f0f2ff","MainColor":"141a33","AccentColor":"ffcc4d","BackgroundColor":"0c1024","OutlineColor":"2a3361"}') },
+		['Toxic']           = { 36, httpService:JSONDecode('{"FontColor":"f4ffd6","MainColor":"171717","AccentColor":"ccff00","BackgroundColor":"0e0e0e","OutlineColor":"2b2b2b"}') },
 	}
 
-	function ApplyBackgroundVideo(webmLink)
-		if writefile == nil then return end;if readfile == nil then return end;if isfile == nil then return end
-		if ThemeManager.Library == nil then return end
-		if ThemeManager.Library.InnerVideoBackground == nil then return end
-
-		if string.sub(tostring(webmLink), -5) == ".webm" then
-			local CurrentSaved = ""
-			if isfile(ThemeManager.Folder .. '/themes/currentVideoLink.txt') then
-				 CurrentSaved = readfile(ThemeManager.Folder .. '/themes/currentVideoLink.txt')
-			end
-			local VideoData = nil;
-			if CurrentSaved == tostring(webmLink) then
-				VideoData = {
-					Success = true,
-					Body = nil
-				}
-			else
-				VideoData = httprequest({
-					Url = tostring(webmLink),
-					Method = 'GET'
-				})
-			end
-			
-			if (VideoData.Success) then
-				VideoData = VideoData.Body
-				if (isfile(ThemeManager.Folder .. '/themes/currentVideo.webm') == false and VideoData ~= nil) or VideoData ~= nil then
-					writefile(ThemeManager.Folder .. '/themes/currentVideo.webm', VideoData)
-					writefile(ThemeManager.Folder .. '/themes/currentVideoLink.txt', tostring(webmLink))
-				end
-				
-				local Video = getassetfunc(ThemeManager.Folder .. '/themes/currentVideo.webm')
-				ThemeManager.Library.InnerVideoBackground.Video = Video
-				ThemeManager.Library.InnerVideoBackground.Visible = true
-				ThemeManager.Library.InnerVideoBackground:Play()
-			end
-		end
-	end
-	
 	function ThemeManager:ApplyTheme(theme)
 		local customThemeData = self:GetCustomTheme(theme)
 		local data = customThemeData or self.BuiltInThemes[theme]
 		if not data then return end
 
-		-- custom themes are just regular dictionaries instead of an array with { index, dictionary }
-		if self.Library.InnerVideoBackground ~= nil then
-			self.Library.InnerVideoBackground.Visible = false
-		end
-		
-		local scheme = data[2]
-		-- for idx, col in next, customThemeData or scheme do
-			-- if idx ~= "VideoLink" then
-				-- self.Library[idx] = Color3.fromHex(col)
-				
-				-- if Options[idx] then
-					-- Options[idx]:SetValueRGB(Color3.fromHex(col))
-				-- end
-			-- else
-				-- self.Library[idx] = col
-				
-				-- if Options[idx] then
-					-- Options[idx]:SetValue(col)
-				-- end
-				
-				-- --ApplyBackgroundVideo(col)
-			-- end
-		-- end
-		
-		for idx, col in next, customThemeData or scheme do
-			if idx ~= 'VideoLink' then
-				local success, result = pcall(Color3.fromHex, col)
-				if success then
-					self.Library[idx] = result
-					if Options[idx] then
-						Options[idx]:SetValueRGB(result)
-					end
-				end
-			else
-				self.Library[idx] = col
+		for idx, col in next, customThemeData or data[2] do
+			local success, result = pcall(Color3.fromHex, col)
+			if success then
+				self.Library[idx] = result
 				if Options[idx] then
-					Options[idx]:SetValue(col)
+					Options[idx]:SetValueRGB(result)
 				end
 			end
 		end
@@ -138,18 +61,11 @@ local ThemeManager = {} do
 	end
 
 	function ThemeManager:ThemeUpdate()
-		if self.Library.InnerVideoBackground ~= nil then
-			self.Library.InnerVideoBackground.Visible = false
-		end
-		
-		local options = { 'FontColor', 'MainColor', 'AccentColor', 'BackgroundColor', 'OutlineColor', 'VideoLink' }
-		for i, field in next, options do
+		local options = { 'FontColor', 'MainColor', 'AccentColor', 'BackgroundColor', 'OutlineColor' }
+		for _, field in next, options do
 			if Options and Options[field] and Options[field].Value ~= nil then
 				self.Library[field] = Options[field].Value
 			end
-			-- if field == "VideoLink" then
-				-- ApplyBackgroundVideo(Options[field].Value)
-			-- end
 		end
 
 		self.Library.AccentColorDark = self.Library:GetDarkerColor(self.Library.AccentColor);
@@ -203,7 +119,6 @@ local ThemeManager = {} do
 		groupbox:AddLabel('Accent color'):AddColorPicker('AccentColor', { Default = self.Library.AccentColor });
 		groupbox:AddLabel('Outline color'):AddColorPicker('OutlineColor', { Default = self.Library.OutlineColor });
 		groupbox:AddLabel('Font color')	:AddColorPicker('FontColor', { Default = self.Library.FontColor });
-		--groupbox:AddInput('VideoLink', { Text = '¬_¬', Default = self.Library.VideoLink });
 		
 		local ThemesArray = {}
 		for Name, Theme in next, self.BuiltInThemes do
@@ -332,48 +247,18 @@ local ThemeManager = {} do
 		end
 
 		local theme = {}
-		local fields = { 'FontColor', 'MainColor', 'AccentColor', 'BackgroundColor', 'OutlineColor', 'VideoLink' }
+		local fields = { 'FontColor', 'MainColor', 'AccentColor', 'BackgroundColor', 'OutlineColor' }
 
 		for _, field in next, fields do
-			-- Check if the option exists in the Options table before indexing .Value
 			if Options[field] then
-				if field == 'VideoLink' then
-					theme[field] = Options[field].Value
-				else
-					theme[field] = Options[field].Value:ToHex()
-				end
+				theme[field] = Options[field].Value:ToHex()
 			end
 		end
 
+		file = file:gsub('[\\/:*?"<>|]', '')
 		writefile(self.Folder .. '/themes/' .. file .. '.json', httpService:JSONEncode(theme))
 		self.Library:Notify(string.format('Saved custom theme %q', file), 3)
 	end
-
-	-- function ThemeManager:ReloadCustomThemes()
-		-- local list = listfiles(self.Folder .. '/themes')
-
-		-- local out = {}
-		-- for i = 1, #list do
-			-- local file = list[i]
-			-- if file:sub(-5) == '.json' then
-				-- -- i hate this but it has to be done ...
-
-				-- local pos = file:find('.json', 1, true)
-				-- local char = file:sub(pos, pos)
-
-				-- while char ~= '/' and char ~= '\\' and char ~= '' do
-					-- pos = pos - 1
-					-- char = file:sub(pos, pos)
-				-- end
-
-				-- if char == '/' or char == '\\' then
-					-- table.insert(out, file:sub(pos + 1))
-				-- end
-			-- end
-		-- end
-
-		-- return out
-	-- end
 
 	function ThemeManager:ReloadCustomThemes()
 		local list = listfiles(self.Folder .. '/themes')
@@ -417,7 +302,7 @@ local ThemeManager = {} do
 	end
 
 	function ThemeManager:SetFolder(folder)
-		self.Folder = folder
+		self.Folder = folder:gsub('/+$', '')
 		self:BuildFolderTree()
 	end
 
