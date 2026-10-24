@@ -26,7 +26,7 @@ local SaveManager = {} do
 		},
 		Dropdown = {
 			Save = function(idx, object)
-				return { type = 'Dropdown', idx = idx, value = object.Value, mutli = object.Multi }
+				return { type = 'Dropdown', idx = idx, value = object.Value, multi = object.Multi }
 			end,
 			Load = function(idx, data)
 				if Options[idx] then 
@@ -74,7 +74,7 @@ local SaveManager = {} do
 	end
 
 	function SaveManager:SetFolder(folder)
-		self.Folder = folder;
+		self.Folder = folder:gsub('/+$', '')
 		self:BuildFolderTree()
 	end
 
@@ -83,6 +83,7 @@ local SaveManager = {} do
 			return false, 'no config file is selected'
 		end
 
+		name = name:gsub('[\\/:*?"<>|]', '')
 		local fullPath = self.Folder .. '/settings/' .. name .. '.json'
 
 		local data = {
@@ -91,6 +92,7 @@ local SaveManager = {} do
 
 		for idx, toggle in next, Toggles do
 			if self.Ignore[idx] then continue end
+			if not self.Parser[toggle.Type] then continue end
 
 			table.insert(data.objects, self.Parser[toggle.Type].Save(idx, toggle))
 		end
@@ -120,7 +122,7 @@ local SaveManager = {} do
 		if not isfile(file) then return false, 'invalid file' end
 
 		local success, decoded = pcall(httpService.JSONDecode, httpService, readfile(file))
-		if not success then return false, 'decode error' end
+		if not success or type(decoded) ~= 'table' or type(decoded.objects) ~= 'table' then return false, 'decode error' end
 
 		for _, option in next, decoded.objects do
 			if self.Parser[option.type] then
@@ -149,49 +151,36 @@ local SaveManager = {} do
 		self:SetIgnoreIndexes({ 
 			"BackgroundColor", "MainColor", "AccentColor", "OutlineColor", "FontColor", -- themes
 			"ThemeManager_ThemeList", 'ThemeManager_CustomThemeList', 'ThemeManager_CustomThemeName', -- themes
-			"VideoLink",
 		})
 	end
 
 	function SaveManager:BuildFolderTree()
-		local paths = {
-			self.Folder,
-			self.Folder .. '/themes',
-			self.Folder .. '/settings'
-		}
+		local paths = {}
+		local parts = self.Folder:split('/')
+		for idx = 1, #parts do
+			paths[#paths + 1] = table.concat(parts, '/', 1, idx)
+		end
+		paths[#paths + 1] = self.Folder .. '/themes'
+		paths[#paths + 1] = self.Folder .. '/settings'
 
 		for i = 1, #paths do
-			local str = paths[i]
-			if not isfolder(str) then
-				makefolder(str)
+			if not isfolder(paths[i]) then
+				makefolder(paths[i])
 			end
 		end
 	end
 
 	function SaveManager:RefreshConfigList()
 		local list = listfiles(self.Folder .. '/settings')
-
 		local out = {}
+
 		for i = 1, #list do
-			local file = list[i]
-			if file:sub(-5) == '.json' then
-				-- i hate this but it has to be done ...
-
-				local pos = file:find('.json', 1, true)
-				local start = pos
-
-				local char = file:sub(pos, pos)
-				while char ~= '/' and char ~= '\\' and char ~= '' do
-					pos = pos - 1
-					char = file:sub(pos, pos)
-				end
-
-				if char == '/' or char == '\\' then
-					table.insert(out, file:sub(pos + 1, start - 1))
-				end
+			local name = list[i]:match('([^\\/]+)%.json$')
+			if name then
+				table.insert(out, name)
 			end
 		end
-		
+
 		return out
 	end
 
@@ -282,6 +271,9 @@ local SaveManager = {} do
 
 		section:AddButton('Set as autoload', function()
 			local name = Options.SaveManager_ConfigList.Value
+			if not name then
+				return self.Library:Notify('Select a config first', 2)
+			end
 			writefile(self.Folder .. '/settings/autoload.txt', name)
 			SaveManager.AutoloadLabel:SetText('Current autoload config: ' .. name)
 			self.Library:Notify(string.format('Set %q to auto load', name))
