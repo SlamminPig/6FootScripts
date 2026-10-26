@@ -95,6 +95,112 @@ local ThemeManager = {} do
 		end
 	end
 
+	ThemeManager.Fonts = {
+		'Code', 'RobotoMono', 'Ubuntu', 'Gotham', 'GothamMedium', 'BuilderSans', 'BuilderSansMedium',
+		'SourceSansSemibold', 'Roboto', 'Nunito', 'TitilliumWeb', 'Jura', 'Michroma', 'FredokaOne', 'Arcade', 'SciFi',
+	}
+
+	function ThemeManager:GetFonts()
+		local out = {}
+		for _, name in ipairs(self.Fonts) do
+			local ok = pcall(function()
+				return Enum.Font[name]
+			end)
+			if ok then
+				table.insert(out, name)
+			end
+		end
+		return out
+	end
+
+	function ThemeManager:GetSavedFont()
+		local path = self.Folder .. '/themes/font.txt'
+		if isfile and isfile(path) then
+			local name = readfile(path)
+			if table.find(self:GetFonts(), name) then
+				return name
+			end
+		end
+		return 'Code'
+	end
+
+	function ThemeManager:SaveFont(name)
+		if writefile then
+			pcall(writefile, self.Folder .. '/themes/font.txt', name)
+		end
+	end
+
+	ThemeManager.RainbowParts = {
+		{ Name = 'Accent', Field = 'AccentColor', Brightness = 1 },
+		{ Name = 'Font', Field = 'FontColor', Brightness = 1 },
+		{ Name = 'Outline', Field = 'OutlineColor', Brightness = 0.6 },
+		{ Name = 'Main', Field = 'MainColor', Brightness = 0.3 },
+		{ Name = 'Background', Field = 'BackgroundColor', Brightness = 0.2 },
+	}
+
+	function ThemeManager:GetSavedRainbow()
+		local path = self.Folder .. '/themes/rainbow.json'
+		if isfile and isfile(path) then
+			local ok, data = pcall(httpService.JSONDecode, httpService, readfile(path))
+			if ok and type(data) == 'table' then
+				return type(data.parts) == 'table' and data.parts or {}, tonumber(data.speed) or 5
+			end
+		end
+		return {}, 5
+	end
+
+	function ThemeManager:SaveRainbow()
+		if not writefile or not Options.ThemeManager_Rainbow then
+			return
+		end
+		local parts = {}
+		for name, enabled in next, Options.ThemeManager_Rainbow.Value do
+			if enabled then
+				table.insert(parts, name)
+			end
+		end
+		local data = { parts = parts, speed = Options.ThemeManager_RainbowSpeed.Value }
+		pcall(writefile, self.Folder .. '/themes/rainbow.json', httpService:JSONEncode(data))
+	end
+
+	function ThemeManager:StartRainbow()
+		if self.RainbowConnection then
+			return
+		end
+		local function onFrame()
+			local selected = Options.ThemeManager_Rainbow and Options.ThemeManager_Rainbow.Value
+			if type(selected) ~= 'table' or not next(selected) then
+				return
+			end
+
+			local speed = Options.ThemeManager_RainbowSpeed and Options.ThemeManager_RainbowSpeed.Value or 5
+			local hue = (os.clock() * speed / 20) % 1
+			local changed = false
+
+			for _, part in ipairs(self.RainbowParts) do
+				if selected[part.Name] then
+					self.Library[part.Field] = Color3.fromHSV(hue, 0.8, part.Brightness)
+					changed = true
+				end
+			end
+
+			if changed then
+				self.Library.AccentColorDark = self.Library:GetDarkerColor(self.Library.AccentColor)
+				self.Library:UpdateColorsUsingRegistry()
+			end
+		end
+
+		local signal = game:GetService('RunService').RenderStepped
+		if self.Library.Connect then
+			self.RainbowConnection = self.Library:Connect(signal, onFrame)
+		else
+			self.RainbowConnection = signal:Connect(onFrame)
+			if self.Library.GiveSignal then
+				self.Library:GiveSignal(self.RainbowConnection)
+			end
+		end
+	end
+
 	function ThemeManager:SaveDefault(theme)
 		writefile(self.Folder .. '/themes/default.txt', theme)
 	end
@@ -119,6 +225,39 @@ local ThemeManager = {} do
 		groupbox:AddLabel('Accent color'):AddColorPicker('AccentColor', { Default = self.Library.AccentColor });
 		groupbox:AddLabel('Outline color'):AddColorPicker('OutlineColor', { Default = self.Library.OutlineColor });
 		groupbox:AddLabel('Font color')	:AddColorPicker('FontColor', { Default = self.Library.FontColor });
+
+		groupbox:AddDropdown('ThemeManager_Font', { Text = 'Font', Values = self:GetFonts(), Default = self:GetSavedFont() })
+		Options.ThemeManager_Font:OnChanged(function()
+			local name = Options.ThemeManager_Font.Value
+			if name and self.Library.SetFont and self.Library:SetFont(name) then
+				self:SaveFont(name)
+			end
+		end)
+
+		local rainbowNames = {}
+		for _, part in ipairs(self.RainbowParts) do
+			table.insert(rainbowNames, part.Name)
+		end
+		local savedParts, savedSpeed = self:GetSavedRainbow()
+
+		groupbox:AddDropdown('ThemeManager_Rainbow', { Text = 'Rainbow', Values = rainbowNames, Default = savedParts, Multi = true, AllowNull = true })
+		groupbox:AddSlider('ThemeManager_RainbowSpeed', { Text = 'Rainbow speed', Default = math.clamp(savedSpeed, 1, 10), Min = 1, Max = 10, Rounding = 0, Compact = true })
+
+		local rainbowReady = false
+		Options.ThemeManager_Rainbow:OnChanged(function()
+			if not rainbowReady then
+				return
+			end
+			self:ThemeUpdate()
+			self:SaveRainbow()
+		end)
+		Options.ThemeManager_RainbowSpeed:OnChanged(function()
+			if rainbowReady then
+				self:SaveRainbow()
+			end
+		end)
+		rainbowReady = true
+		self:StartRainbow()
 		
 		local ThemesArray = {}
 		for Name, Theme in next, self.BuiltInThemes do

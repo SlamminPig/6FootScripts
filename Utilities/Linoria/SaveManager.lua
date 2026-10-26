@@ -78,15 +78,9 @@ local SaveManager = {} do
 		self:BuildFolderTree()
 	end
 
-	function SaveManager:Save(name)
-		if (not name) then
-			return false, 'no config file is selected'
-		end
-
-		name = name:gsub('[\\/:*?"<>|]', '')
-		local fullPath = self.Folder .. '/settings/' .. name .. '.json'
-
+	function SaveManager:Export()
 		local data = {
+			game = game.GameId,
 			objects = {}
 		}
 
@@ -102,11 +96,49 @@ local SaveManager = {} do
 			if self.Ignore[idx] then continue end
 
 			table.insert(data.objects, self.Parser[option.Type].Save(idx, option))
-		end	
+		end
 
 		local success, encoded = pcall(httpService.JSONEncode, httpService, data)
 		if not success then
-			return false, 'failed to encode data'
+			return nil, 'failed to encode data'
+		end
+		return encoded
+	end
+
+	function SaveManager:Import(json)
+		if type(json) ~= 'string' or json:gsub('%s', '') == '' then
+			return false, 'nothing to import'
+		end
+
+		local success, decoded = pcall(httpService.JSONDecode, httpService, json)
+		if not success or type(decoded) ~= 'table' or type(decoded.objects) ~= 'table' then
+			return false, 'decode error'
+		end
+
+		if decoded.game ~= nil and decoded.game ~= game.GameId then
+			return false, 'config is for a different game'
+		end
+
+		for _, option in next, decoded.objects do
+			if type(option) == 'table' and self.Parser[option.type] and not self.Ignore[option.idx] then
+				task.spawn(function() self.Parser[option.type].Load(option.idx, option) end)
+			end
+		end
+
+		return true
+	end
+
+	function SaveManager:Save(name)
+		if (not name) then
+			return false, 'no config file is selected'
+		end
+
+		name = name:gsub('[\\/:*?"<>|]', '')
+		local fullPath = self.Folder .. '/settings/' .. name .. '.json'
+
+		local encoded, err = self:Export()
+		if not encoded then
+			return false, err
 		end
 
 		writefile(fullPath, encoded)
@@ -117,20 +149,11 @@ local SaveManager = {} do
 		if (not name) then
 			return false, 'no config file is selected'
 		end
-		
+
 		local file = self.Folder .. '/settings/' .. name .. '.json'
 		if not isfile(file) then return false, 'invalid file' end
 
-		local success, decoded = pcall(httpService.JSONDecode, httpService, readfile(file))
-		if not success or type(decoded) ~= 'table' or type(decoded.objects) ~= 'table' then return false, 'decode error' end
-
-		for _, option in next, decoded.objects do
-			if self.Parser[option.type] then
-				task.spawn(function() self.Parser[option.type].Load(option.idx, option) end) -- task.spawn() so the config loading wont get stuck.
-			end
-		end
-
-		return true
+		return self:Import(readfile(file))
 	end
 
 	function SaveManager:Delete(name)
@@ -150,7 +173,7 @@ local SaveManager = {} do
 	function SaveManager:IgnoreThemeSettings()
 		self:SetIgnoreIndexes({ 
 			"BackgroundColor", "MainColor", "AccentColor", "OutlineColor", "FontColor", -- themes
-			"ThemeManager_ThemeList", 'ThemeManager_CustomThemeList', 'ThemeManager_CustomThemeName', -- themes
+			"ThemeManager_ThemeList", 'ThemeManager_CustomThemeList', 'ThemeManager_CustomThemeName', 'ThemeManager_Font', 'ThemeManager_Rainbow', 'ThemeManager_RainbowSpeed', -- themes
 		})
 	end
 
@@ -290,12 +313,40 @@ local SaveManager = {} do
 
 		SaveManager.AutoloadLabel = section:AddLabel('Current autoload config: none', true)
 
+		section:AddDivider()
+
+		section:AddButton('Copy config', function()
+			local clipboard = setclipboard or toclipboard
+			if not clipboard then
+				return self.Library:Notify('Your executor does not support copying to clipboard', 3)
+			end
+
+			local encoded, err = self:Export()
+			if not encoded then
+				return self.Library:Notify('Failed to copy config: ' .. err)
+			end
+
+			clipboard(encoded)
+			self.Library:Notify('Copied current settings to clipboard')
+		end)
+
+		section:AddInput('SaveManager_ImportText', { Text = 'Paste config', Placeholder = 'Paste a copied config here', ClearTextOnFocus = false })
+		section:AddButton('Import config', function()
+			local success, err = self:Import(Options.SaveManager_ImportText.Value)
+			if not success then
+				return self.Library:Notify('Failed to import config: ' .. err)
+			end
+
+			Options.SaveManager_ImportText:SetValue('')
+			self.Library:Notify('Imported config')
+		end)
+
 		if isfile(self.Folder .. '/settings/autoload.txt') then
 			local name = readfile(self.Folder .. '/settings/autoload.txt')
 			SaveManager.AutoloadLabel:SetText('Current autoload config: ' .. name)
 		end
 
-		SaveManager:SetIgnoreIndexes({ 'SaveManager_ConfigList', 'SaveManager_ConfigName' })
+		SaveManager:SetIgnoreIndexes({ 'SaveManager_ConfigList', 'SaveManager_ConfigName', 'SaveManager_ImportText' })
 	end
 
 	SaveManager:BuildFolderTree()

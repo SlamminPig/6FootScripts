@@ -3259,14 +3259,6 @@ function Library:SetWatermarkVisibility(Bool)
 	Library.Watermark.Visible = Bool;
 end;
 
-function Library:SetWatermark(Text)
-	local X, Y = Library:GetTextBounds(Text, Library.Font, 14);
-	Library.Watermark.Size = UDim2.new(0, X + 15, 0, (Y * 1.5) + 3);
-	Library:SetWatermarkVisibility(true)
-
-	Library.WatermarkText.Text = Text;
-end;
-
 Library.NotifyTimestamps = true;
 Library.NotifyTimeColor = Color3.fromRGB(200, 200, 200);
 Library.NotifyTimeSeparator = ' | ';
@@ -3419,6 +3411,110 @@ function Library:Notify(Text, Time, SoundId)
 	end);
 
 	return { Close = Close };
+end;
+
+Library.StartTime = os.clock();
+
+local FramesThisSecond = 0;
+local CurrentFPS = 0;
+local FPSClock = os.clock();
+Library:GiveSignal(RunService.RenderStepped:Connect(function()
+	FramesThisSecond = FramesThisSecond + 1;
+	local Now = os.clock();
+	if Now - FPSClock >= 1 then
+		CurrentFPS = math.floor(FramesThisSecond / (Now - FPSClock) + 0.5);
+		FramesThisSecond = 0;
+		FPSClock = Now;
+	end;
+end));
+
+local function FormatElapsed(Seconds)
+	Seconds = math.floor(Seconds);
+	local Hours = math.floor(Seconds / 3600);
+	local Minutes = math.floor(Seconds % 3600 / 60);
+	local Secs = Seconds % 60;
+	if Hours > 0 then
+		return string.format('%d:%02d:%02d', Hours, Minutes, Secs);
+	end;
+	return string.format('%d:%02d', Minutes, Secs);
+end;
+
+local function GetPing()
+	local Success, Ping = pcall(function()
+		return LocalPlayer:GetNetworkPing();
+	end);
+	return Success and math.floor(Ping * 1000 + 0.5) or 0;
+end;
+
+Library.WatermarkTokens = {
+	time = getTime,
+	fps = function()
+		return CurrentFPS;
+	end,
+	ping = GetPing,
+	elapsed = function()
+		return FormatElapsed(os.clock() - Library.StartTime);
+	end,
+};
+
+local WatermarkTemplate = nil;
+
+local function ApplyWatermarkText(Text)
+	local X, Y = Library:GetTextBounds(Text, Library.Font, 14);
+	Library.Watermark.Size = UDim2.new(0, X + 15, 0, (Y * 1.5) + 3);
+	Library.WatermarkText.Text = Text;
+end;
+
+local function FormatWatermark(Template)
+	return (Template:gsub('{(%w+)}', function(Key)
+		local Token = Library.WatermarkTokens[Key];
+		if not Token then
+			return nil;
+		end;
+		local Success, Value = pcall(Token);
+		return Success and tostring(Value) or '?';
+	end));
+end;
+
+function Library:SetWatermark(Text)
+	Text = tostring(Text);
+	if Text:find('{%w+}') then
+		WatermarkTemplate = Text;
+		ApplyWatermarkText(FormatWatermark(Text));
+	else
+		WatermarkTemplate = nil;
+		ApplyWatermarkText(Text);
+	end;
+	Library:SetWatermarkVisibility(true);
+end;
+
+Library:Loop(1, function()
+	if WatermarkTemplate and Library.Watermark and Library.Watermark.Visible then
+		ApplyWatermarkText(FormatWatermark(WatermarkTemplate));
+	end;
+end);
+
+function Library:SetFont(Font)
+	if type(Font) == 'string' then
+		local Success, Result = pcall(function()
+			return Enum.Font[Font];
+		end);
+		if not Success then
+			return false;
+		end;
+		Font = Result;
+	end;
+	if typeof(Font) ~= 'EnumItem' then
+		return false;
+	end;
+
+	Library.Font = Font;
+	for _, Object in ipairs(ScreenGui:GetDescendants()) do
+		if Object:IsA('TextLabel') or Object:IsA('TextButton') or Object:IsA('TextBox') then
+			Object.Font = Font;
+		end;
+	end;
+	return true;
 end;
 
 function Library:CreateWindow(...)
