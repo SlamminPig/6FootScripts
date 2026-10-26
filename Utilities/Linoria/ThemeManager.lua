@@ -139,7 +139,16 @@ local ThemeManager = {} do
 	}
 
 	function ThemeManager:GetSavedRainbow()
-		local path = self.Folder .. '/themes/rainbow.json'
+		local path = self.Folder .. '/themes/rainbow.txt'
+		local legacy = self.Folder .. '/themes/rainbow.json'
+		if isfile and isfile(legacy) then
+			if not isfile(path) and writefile then
+				pcall(writefile, path, readfile(legacy))
+			end
+			if delfile then
+				pcall(delfile, legacy)
+			end
+		end
 		if isfile and isfile(path) then
 			local ok, data = pcall(httpService.JSONDecode, httpService, readfile(path))
 			if ok and type(data) == 'table' then
@@ -160,7 +169,7 @@ local ThemeManager = {} do
 			end
 		end
 		local data = { parts = parts, speed = Options.ThemeManager_RainbowSpeed.Value }
-		pcall(writefile, self.Folder .. '/themes/rainbow.json', httpService:JSONEncode(data))
+		pcall(writefile, self.Folder .. '/themes/rainbow.txt', httpService:JSONEncode(data))
 	end
 
 	function ThemeManager:StartRainbow()
