@@ -657,7 +657,15 @@ local function CleanTask(Task)
 	elseif Kind == 'function' then
 		Task()
 	elseif Kind == 'thread' then
-		task.cancel(Task)
+		local Cancelled = false
+		if coroutine.running() ~= Task then
+			Cancelled = pcall(task.cancel, Task)
+		end
+		if not Cancelled then
+			task.defer(function()
+				pcall(task.cancel, Task)
+			end)
+		end
 	elseif Kind == 'Instance' then
 		Task:Destroy()
 	elseif type(Task) == 'table' then
@@ -669,65 +677,131 @@ local function CleanTask(Task)
 	end
 end
 
-function Library:Maid()
-	local Tasks = {}
-	local Maid = {}
-
-	function Maid:GiveTask(Task)
-		local Index = #Tasks + 1
-		Tasks[Index] = Task
-		return Index
+local function SafeCleanTask(Task)
+	local Success, Error = pcall(CleanTask, Task)
+	if not Success then
+		warn('[Maid] Cleanup error: ' .. tostring(Error))
 	end
-
-	function Maid:DoCleaning()
-		for Key, Task in pairs(Tasks) do
-			if typeof(Task) == 'RBXScriptConnection' then
-				Tasks[Key] = nil
-				Task:Disconnect()
-			end
-		end
-
-		local Key, Task = next(Tasks)
-		while Task ~= nil do
-			Tasks[Key] = nil
-			local Success, Error = pcall(CleanTask, Task)
-			if not Success then
-				warn(Error)
-			end
-			Key, Task = next(Tasks)
-		end
-	end
-
-	Maid.Destroy = Maid.DoCleaning
-
-	setmetatable(Maid, {
-		__index = function(_, Key)
-			return Tasks[Key]
-		end,
-		__newindex = function(_, Key, Task)
-			local Old = Tasks[Key]
-			if Old == Task then
-				return
-			end
-			Tasks[Key] = Task
-			if Old ~= nil then
-				local Success, Error = pcall(CleanTask, Old)
-				if not Success then
-					warn(Error)
-				end
-			end
-		end,
-	})
-
-	if Library.Unloaded then
-		return Maid
-	end
-	Library:OnUnload(function()
-		Maid:DoCleaning()
-	end)
-
-	return Maid
 end
+
+local function IsValidTask(Task)
+	local Kind = typeof(Task)
+	return Kind == 'function' or Kind == 'thread' or Kind == 'RBXScriptConnection' or Kind == 'Instance'
+		or (Kind == 'table' and (type(Task.Destroy) == 'function' or type(Task.Disconnect) == 'function'))
+end
+
+local ActiveMaids = {}
+local MaidTasks = setmetatable({}, { __mode = 'k' })
+
+local Maid = {}
+Maid.ClassName = 'Maid'
+
+function Maid.new()
+	local self = setmetatable({}, Maid)
+	MaidTasks[self] = {}
+	return self
+end
+
+function Maid.isMaid(Value)
+	return type(Value) == 'table' and getmetatable(Value) == Maid
+end
+
+function Maid.__index(self, Key)
+	if Maid[Key] ~= nil then
+		return Maid[Key]
+	end
+	return MaidTasks[self][Key]
+end
+
+function Maid.__newindex(self, Key, NewTask)
+	if Maid[Key] ~= nil then
+		error(string.format("Cannot use '%s' as a Maid key", tostring(Key)), 2)
+	end
+
+	local Tasks = MaidTasks[self]
+	local Old = Tasks[Key]
+	if Old == NewTask then
+		return
+	end
+
+	if NewTask ~= nil and Library.Unloaded then
+		Tasks[Key] = nil
+		SafeCleanTask(NewTask)
+	else
+		Tasks[Key] = NewTask
+		if NewTask ~= nil then
+			ActiveMaids[self] = true
+		elseif next(Tasks) == nil then
+			ActiveMaids[self] = nil
+		end
+	end
+
+	if Old ~= nil then
+		SafeCleanTask(Old)
+	end
+end
+
+function Maid:GiveTask(Task)
+	if not Task then
+		error('Task cannot be false or nil', 2)
+	end
+	if not IsValidTask(Task) then
+		warn('[Maid.GiveTask] Task of type ' .. typeof(Task) .. ' has no Destroy or Disconnect and will be ignored on cleanup\n' .. debug.traceback())
+	end
+
+	local Index = #MaidTasks[self] + 1
+	self[Index] = Task
+	return Index
+end
+
+function Maid:Add(Task)
+	self:GiveTask(Task)
+	return Task
+end
+
+function Maid:DoCleaning()
+	local Tasks = MaidTasks[self]
+
+	for Key, Task in pairs(Tasks) do
+		if typeof(Task) == 'RBXScriptConnection' then
+			Tasks[Key] = nil
+			Task:Disconnect()
+		end
+	end
+
+	local Key, Task = next(Tasks)
+	while Task ~= nil do
+		Tasks[Key] = nil
+		SafeCleanTask(Task)
+		Key, Task = next(Tasks)
+	end
+
+	ActiveMaids[self] = nil
+end
+
+Maid.Destroy = Maid.DoCleaning
+
+Library.Maid = setmetatable({
+	new = Maid.new,
+	isMaid = Maid.isMaid,
+	ClassName = 'Maid',
+}, {
+	__call = function()
+		return Maid.new()
+	end,
+})
+
+Library:OnUnload(function()
+	local Key = next(ActiveMaids)
+	while Key ~= nil do
+		ActiveMaids[Key] = nil
+		local Success, Error = pcall(Maid.DoCleaning, Key)
+		if not Success then
+			warn('[Maid] Cleanup error: ' .. tostring(Error))
+		end
+		Key = next(ActiveMaids)
+	end
+end)
 
 Library:GiveSignal(ScreenGui.DescendantRemoving:Connect(function(Instance)
 	if Library.RegistryMap[Instance] then
