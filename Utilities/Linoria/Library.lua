@@ -131,6 +131,46 @@ local function GetTeamsString()
 	return TeamList;
 end;
 
+local function AddListener(Object, Field, Func)
+	assert(type(Func) == 'function', 'OnChanged: expected a function');
+
+	local ListField = '_' .. Field .. 'Listeners';
+	local List = rawget(Object, ListField);
+	if not List then
+		List = {};
+		rawset(Object, ListField, List);
+		rawset(Object, Field, function(...)
+			for _, Listener in ipairs(table.clone(List)) do
+				if Library.NotifyOnError then
+					Library:SafeCallback(Listener, ...);
+				else
+					local Success, Error = pcall(Listener, ...);
+					if not Success then
+						task.spawn(error, Error, 0);
+					end;
+				end;
+			end;
+		end);
+	end;
+
+	table.insert(List, Func);
+
+	local Connection = { Connected = true };
+	function Connection:Disconnect()
+		if not self.Connected then
+			return;
+		end;
+		self.Connected = false;
+		local Index = table.find(List, Func);
+		if Index then
+			table.remove(List, Index);
+		end;
+	end;
+	Connection.Destroy = Connection.Disconnect;
+
+	return Connection;
+end;
+
 function Library:SafeCallback(f, ...)
 	if (not f) then
 		return;
@@ -791,6 +831,238 @@ Library.Maid = setmetatable({
 	end,
 })
 
+function Library:OnCharacter(Callback)
+	assert(type(Callback) == 'function', 'OnCharacter: expected a function');
+
+	local Watcher = Library.Maid.new();
+	local CurrentCharacter = nil;
+
+	local function Setup(Character)
+		CurrentCharacter = Character;
+		local CharacterMaid = Library.Maid.new();
+		Watcher.Character = CharacterMaid;
+
+		CharacterMaid:GiveTask(task.spawn(function()
+			local Humanoid = Character:WaitForChild('Humanoid', 10);
+			Callback(Character, CharacterMaid, Humanoid);
+		end));
+	end;
+
+	Watcher:GiveTask(LocalPlayer.CharacterAdded:Connect(Setup));
+	Watcher:GiveTask(LocalPlayer.CharacterRemoving:Connect(function(Character)
+		if Character == CurrentCharacter then
+			CurrentCharacter = nil;
+			Watcher.Character = nil;
+		end;
+	end));
+
+	if LocalPlayer.Character then
+		Setup(LocalPlayer.Character);
+	end;
+
+	return Watcher;
+end;
+
+function Library:Throttle(Interval, Callback, Config)
+	assert(type(Interval) == 'number', 'Throttle: expected a number interval');
+	assert(type(Callback) == 'function', 'Throttle: expected a function');
+
+	Config = Config or {};
+	local Leading = Config.Leading ~= false;
+	local Trailing = Config.Trailing ~= false;
+
+	local NextAllowed = 0;
+	local PendingArgs = nil;
+	local Scheduled = false;
+
+	local function Run(...)
+		if Library.Unloaded then
+			return;
+		end;
+		NextAllowed = os.clock() + Interval;
+		Callback(...);
+	end;
+
+	local function ScheduleTrailing(Delay)
+		if Scheduled then
+			return;
+		end;
+		Scheduled = true;
+		Library:Spawn(function()
+			task.wait(Delay);
+			Scheduled = false;
+			if PendingArgs then
+				local Args = PendingArgs;
+				PendingArgs = nil;
+				Run(table.unpack(Args, 1, Args.n));
+			end;
+		end);
+	end;
+
+	return function(...)
+		local Now = os.clock();
+		if Now >= NextAllowed and not Scheduled then
+			if Leading then
+				Run(...);
+			elseif Trailing then
+				PendingArgs = table.pack(...);
+				NextAllowed = Now + Interval;
+				ScheduleTrailing(Interval);
+			end;
+			return;
+		end;
+
+		if Trailing then
+			PendingArgs = table.pack(...);
+			ScheduleTrailing(math.max(0, NextAllowed - Now));
+		end;
+	end;
+end;
+
+function Library:Debounce(Delay, Callback)
+	assert(type(Delay) == 'number', 'Debounce: expected a number delay');
+	assert(type(Callback) == 'function', 'Debounce: expected a function');
+
+	local Version = 0;
+
+	return function(...)
+		Version = Version + 1;
+		local MyVersion = Version;
+		local Args = table.pack(...);
+
+		Library:Spawn(function()
+			task.wait(Delay);
+			if MyVersion == Version and not Library.Unloaded then
+				Callback(table.unpack(Args, 1, Args.n));
+			end;
+		end);
+	end;
+end;
+
+local EveryTimestamps = {};
+
+function Library:Every(Key, Interval)
+	local Now = os.clock();
+	if Now - (EveryTimestamps[Key] or -math.huge) >= Interval then
+		EveryTimestamps[Key] = Now;
+		return true;
+	end;
+	return false;
+end;
+
+Library.FuzzyCredits = 'Fuzzy matching adapted from fzy-lua by Seth Warn, MIT License';
+
+local FUZZY_GAP_LEADING = -0.005;
+local FUZZY_GAP_TRAILING = -0.005;
+local FUZZY_GAP_INNER = -0.01;
+local FUZZY_CONSECUTIVE = 1.0;
+local FUZZY_SLASH = 0.9;
+local FUZZY_WORD = 0.8;
+local FUZZY_CAPITAL = 0.7;
+local FUZZY_DOT = 0.6;
+local FUZZY_MAX_LENGTH = 1024;
+
+local function FuzzyBonuses(Haystack)
+	local Bonuses = {};
+	local Last = '/';
+	for Index = 1, #Haystack do
+		local Char = Haystack:sub(Index, Index);
+		if Last == '/' or Last == '\\' then
+			Bonuses[Index] = FUZZY_SLASH;
+		elseif Last == '-' or Last == '_' or Last == ' ' then
+			Bonuses[Index] = FUZZY_WORD;
+		elseif Last == '.' then
+			Bonuses[Index] = FUZZY_DOT;
+		elseif Last:match('%l') and Char:match('%u') then
+			Bonuses[Index] = FUZZY_CAPITAL;
+		else
+			Bonuses[Index] = 0;
+		end;
+		Last = Char;
+	end;
+	return Bonuses;
+end;
+
+function Library:FuzzyScore(Needle, Haystack)
+	Needle, Haystack = tostring(Needle), tostring(Haystack);
+	local NeedleLength, HaystackLength = #Needle, #Haystack;
+	if NeedleLength == 0 or NeedleLength > HaystackLength or HaystackLength > FUZZY_MAX_LENGTH then
+		return nil;
+	end;
+
+	local LowerNeedle, LowerHaystack = Needle:lower(), Haystack:lower();
+	if LowerNeedle == LowerHaystack then
+		return math.huge;
+	end;
+
+	local SearchFrom = 1;
+	for Index = 1, NeedleLength do
+		SearchFrom = LowerHaystack:find(LowerNeedle:sub(Index, Index), SearchFrom, true);
+		if not SearchFrom then
+			return nil;
+		end;
+		SearchFrom = SearchFrom + 1;
+	end;
+
+	local Bonuses = FuzzyBonuses(Haystack);
+	local HaystackChars = {};
+	for Index = 1, HaystackLength do
+		HaystackChars[Index] = LowerHaystack:sub(Index, Index);
+	end;
+
+	local PreviousD, PreviousM = nil, nil;
+	for Row = 1, NeedleLength do
+		local D, M = {}, {};
+		local Best = -math.huge;
+		local Gap = Row == NeedleLength and FUZZY_GAP_TRAILING or FUZZY_GAP_INNER;
+		local NeedleChar = LowerNeedle:sub(Row, Row);
+
+		for Column = 1, HaystackLength do
+			if NeedleChar == HaystackChars[Column] then
+				local Score = -math.huge;
+				if Row == 1 then
+					Score = (Column - 1) * FUZZY_GAP_LEADING + Bonuses[Column];
+				elseif Column > 1 then
+					Score = math.max(PreviousM[Column - 1] + Bonuses[Column], PreviousD[Column - 1] + FUZZY_CONSECUTIVE);
+				end;
+				D[Column] = Score;
+				Best = math.max(Score, Best + Gap);
+			else
+				D[Column] = -math.huge;
+				Best = Best + Gap;
+			end;
+			M[Column] = Best;
+		end;
+
+		PreviousD, PreviousM = D, M;
+	end;
+
+	return PreviousM[HaystackLength];
+end;
+
+function Library:FuzzyFilter(Needle, Values)
+	local Results = {};
+	for Index, Value in ipairs(Values) do
+		local Score = Library:FuzzyScore(Needle, Value);
+		if Score then
+			table.insert(Results, { Value = Value, Score = Score, Index = Index });
+		end;
+	end;
+
+	table.sort(Results, function(A, B)
+		if A.Score ~= B.Score then
+			return A.Score > B.Score;
+		end;
+		return A.Index < B.Index;
+	end);
+
+	local Sorted = {};
+	for Index, Result in ipairs(Results) do
+		Sorted[Index] = Result.Value;
+	end;
+	return Sorted;
+end;
+
 Library:OnUnload(function()
 	local Key = next(ActiveMaids)
 	while Key ~= nil do
@@ -1267,8 +1539,9 @@ do
 		end;
 
 		function ColorPicker:OnChanged(Func)
-			ColorPicker.Changed = Func;
-			Func(ColorPicker.Value)
+			local Connection = AddListener(ColorPicker, 'Changed', Func);
+			Func(ColorPicker.Value);
+			return Connection;
 		end;
 
 		if ParentObj.Addons then
@@ -1616,12 +1889,13 @@ do
 		end;
 
 		function KeyPicker:OnClick(Callback)
-			KeyPicker.Clicked = Callback
+			return AddListener(KeyPicker, 'Clicked', Callback)
 		end
 
 		function KeyPicker:OnChanged(Callback)
-			KeyPicker.Changed = Callback
+			local Connection = AddListener(KeyPicker, 'Changed', Callback)
 			Callback(KeyPicker.Value)
+			return Connection
 		end
 
 		if ParentObj.Addons then
@@ -2215,8 +2489,9 @@ do
 		});
 
 		function Textbox:OnChanged(Func)
-			Textbox.Changed = Func;
+			local Connection = AddListener(Textbox, 'Changed', Func);
 			Func(Textbox.Value);
+			return Connection;
 		end;
 
 		Groupbox:AddBlank(5);
@@ -2322,8 +2597,9 @@ do
 		end;
 
 		function Toggle:OnChanged(Func)
-			Toggle.Changed = Func;
+			local Connection = AddListener(Toggle, 'Changed', Func);
 			Func(Toggle.Value);
+			return Connection;
 		end;
 
 		function Toggle:SetValue(Bool)
@@ -2505,8 +2781,9 @@ do
 		end;
 
 		function Slider:OnChanged(Func)
-			Slider.Changed = Func;
+			local Connection = AddListener(Slider, 'Changed', Func);
 			Func(Slider.Value);
+			return Connection;
 		end;
 
 		local function Round(Value)
@@ -2736,6 +3013,8 @@ do
 		end
 
 		local MAX_DROPDOWN_ITEMS = 8;
+		local SearchHeight = Info.Searchable and 24 or 0;
+		Dropdown.SearchText = '';
 
 		local ListOuter = Library:Create('Frame', {
 			BackgroundColor3 = Color3.new(0, 0, 0);
@@ -2750,7 +3029,7 @@ do
 		end;
 
 		local function RecalculateListSize(YSize)
-			local Y = YSize or math.clamp(#Dropdown.Values * 20, 0, MAX_DROPDOWN_ITEMS * 20) + 1;
+			local Y = YSize or math.clamp(#Dropdown.Values * 20, 0, MAX_DROPDOWN_ITEMS * 20) + 1 + SearchHeight;
 			ListOuter.Size = UDim2.fromOffset(DropdownOuter.AbsoluteSize.X + 0.5, Y)
 		end;
 
@@ -2778,7 +3057,8 @@ do
 			BackgroundTransparency = 1;
 			BorderSizePixel = 0;
 			CanvasSize = UDim2.new(0, 0, 0, 0);
-			Size = UDim2.new(1, 0, 1, 0);
+			Position = UDim2.fromOffset(0, SearchHeight);
+			Size = UDim2.new(1, 0, 1, -SearchHeight);
 			ZIndex = 21;
 			Parent = ListInner;
 
@@ -2792,6 +3072,72 @@ do
 		Library:AddToRegistry(Scrolling, {
 			ScrollBarImageColor3 = 'AccentColor'
 		})
+
+		local SearchBox;
+		if Info.Searchable then
+			local SearchOuter = Library:Create('Frame', {
+				BackgroundColor3 = Library.BackgroundColor;
+				BorderColor3 = Library.OutlineColor;
+				Position = UDim2.fromOffset(2, 2);
+				Size = UDim2.new(1, -4, 0, SearchHeight - 4);
+				ZIndex = 22;
+				Parent = ListInner;
+			});
+
+			Library:AddToRegistry(SearchOuter, {
+				BackgroundColor3 = 'BackgroundColor';
+				BorderColor3 = 'OutlineColor';
+			});
+
+			SearchBox = Library:Create('TextBox', {
+				BackgroundTransparency = 1;
+				Position = UDim2.fromOffset(4, 0);
+				Size = UDim2.new(1, -8, 1, 0);
+				Font = Library.Font;
+				PlaceholderColor3 = Color3.fromRGB(150, 150, 150);
+				PlaceholderText = 'Search...';
+				Text = '';
+				TextColor3 = Library.FontColor;
+				TextSize = 14;
+				TextXAlignment = Enum.TextXAlignment.Left;
+				ClearTextOnFocus = false;
+				ZIndex = 23;
+				Parent = SearchOuter;
+			});
+
+			Library:ApplyTextStroke(SearchBox);
+			Library:AddToRegistry(SearchBox, {
+				TextColor3 = 'FontColor';
+			});
+
+			SearchBox:GetPropertyChangedSignal('Text'):Connect(function()
+				Dropdown.SearchText = SearchBox.Text;
+				Dropdown:BuildDropdownList();
+				Scrolling.CanvasPosition = Vector2.zero;
+			end);
+
+			SearchBox.FocusLost:Connect(function(EnterPressed)
+				if not EnterPressed or Info.Multi or Dropdown.SearchText == '' then
+					return;
+				end;
+
+				local First = Dropdown:GetDisplayValues()[1];
+				if First == nil then
+					return;
+				end;
+
+				Dropdown.Value = First;
+				Dropdown:BuildDropdownList();
+				Dropdown:Display();
+
+				Library:UpdateDependencyBoxes();
+				Library:SafeCallback(Dropdown.Callback, Dropdown.Value);
+				Library:SafeCallback(Dropdown.Changed, Dropdown.Value);
+				Library:AttemptSave();
+
+				Dropdown:CloseDropdown();
+			end);
+		end;
 
 		Library:Create('UIListLayout', {
 			Padding = UDim.new(0, 0);
@@ -2833,8 +3179,15 @@ do
 			end;
 		end;
 
+		function Dropdown:GetDisplayValues()
+			if SearchBox and Dropdown.SearchText ~= '' then
+				return Library:FuzzyFilter(Dropdown.SearchText, Dropdown.Values);
+			end;
+			return Dropdown.Values;
+		end;
+
 		function Dropdown:BuildDropdownList()
-			local Values = Dropdown.Values;
+			local Values = Dropdown:GetDisplayValues();
 			local Buttons = {};
 
 			for _, Element in next, Scrolling:GetChildren() do
@@ -2966,7 +3319,7 @@ do
 			Scrolling.Visible = false;
 			Scrolling.Visible = true;
 
-			local Y = math.clamp(Count * 20, 0, MAX_DROPDOWN_ITEMS * 20) + 1;
+			local Y = math.clamp(Count * 20, 0, MAX_DROPDOWN_ITEMS * 20) + 1 + SearchHeight;
 			RecalculateListSize(Y);
 		end;
 
@@ -2987,6 +3340,18 @@ do
 			Library.OpenedFrames[ListOuter] = true;
 			DropdownArrow.Rotation = 180;
 
+			if SearchBox then
+				SearchBox.Text = '';
+				Dropdown.SearchText = '';
+				if not Library.IsMobile then
+					task.defer(function()
+						if ListOuter.Visible then
+							SearchBox:CaptureFocus();
+						end;
+					end);
+				end;
+			end;
+
 			RecalculateListSize();
 		end;
 
@@ -2998,11 +3363,16 @@ do
 			ListOuter.Visible = false;
 			Library.OpenedFrames[ListOuter] = nil;
 			DropdownArrow.Rotation = 0;
+
+			if SearchBox and SearchBox:IsFocused() then
+				SearchBox:ReleaseFocus();
+			end;
 		end;
 
 		function Dropdown:OnChanged(Func)
-			Dropdown.Changed = Func;
+			local Connection = AddListener(Dropdown, 'Changed', Func);
 			Func(Dropdown.Value);
+			return Connection;
 		end;
 
 		function Dropdown:SetValue(Val)
@@ -4336,7 +4706,7 @@ function Library:CreateWindow(...)
 
 	Library:GiveSignal(InputService.InputBegan:Connect(function(Input, Processed)
 		if type(Library.ToggleKeybind) == 'table' and Library.ToggleKeybind.Type == 'KeyPicker' then
-			if Input.UserInputType == Enum.UserInputType.Keyboard and Input.KeyCode.Name == Library.ToggleKeybind.Value then
+			if Input.UserInputType == Enum.UserInputType.Keyboard and Input.KeyCode.Name == Library.ToggleKeybind.Value and not InputService:GetFocusedTextBox() then
 				task.spawn(Library.Toggle)
 			end
 		elseif Input.KeyCode == Enum.KeyCode.RightControl or (Input.KeyCode == Enum.KeyCode.RightShift and (not Processed)) then
