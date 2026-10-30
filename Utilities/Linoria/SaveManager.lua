@@ -76,6 +76,13 @@ local SaveManager = {} do
 	function SaveManager:SetFolder(folder)
 		self.Folder = folder:gsub('/+$', '')
 		self:BuildFolderTree()
+		self:ApplyWatermarkFile()
+	end
+
+	function SaveManager:ApplyWatermarkFile()
+		if self.Library and self.Library.SetWatermarkSaveFile then
+			self.Library:SetWatermarkSaveFile(self.Folder .. '/settings/watermark.txt')
+		end
 	end
 
 	function SaveManager:Export()
@@ -209,6 +216,7 @@ local SaveManager = {} do
 
 	function SaveManager:SetLibrary(library)
 		self.Library = library
+		self:ApplyWatermarkFile()
 	end
 
 	function SaveManager:LoadAutoloadConfig()
