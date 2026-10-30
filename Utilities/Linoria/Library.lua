@@ -6,6 +6,7 @@ local Teams: Teams = cloneref(game:GetService('Teams'));
 local Players: Players = cloneref(game:GetService('Players'));
 local RunService: RunService = cloneref(game:GetService('RunService'));
 local TweenService: TweenService = cloneref(game:GetService('TweenService'));
+local GuiService: GuiService = cloneref(game:GetService('GuiService'));
 local RenderStepped = RunService.RenderStepped;
 local LocalPlayer = Players.LocalPlayer;
 local Mouse = LocalPlayer:GetMouse();
@@ -3592,8 +3593,9 @@ do
 	});
 
 	local WatermarkOuter = Library:Create('Frame', {
+		AnchorPoint = Vector2.new(0.5, 0);
 		BorderColor3 = Color3.new(0, 0, 0);
-		Position = UDim2.new(0, 100, 0, -25);
+		Position = UDim2.new(0.5, 0, 0, 10);
 		Size = UDim2.new(0, 213, 0, 20);
 		ZIndex = 200;
 		Visible = false;
@@ -3955,6 +3957,92 @@ function Library:SetWatermark(Text)
 		ApplyWatermarkText(Text);
 	end;
 	Library:SetWatermarkVisibility(true);
+end;
+
+Library.WatermarkTopOffset = 10;
+
+local WatermarkFile = nil;
+
+local function GetDefaultWatermarkPosition()
+	local Success, Inset = pcall(function()
+		return GuiService:GetGuiInset();
+	end);
+	local InsetY = Success and typeof(Inset) == 'Vector2' and Inset.Y or 0;
+	return UDim2.new(0.5, 0, 0, Library.WatermarkTopOffset - InsetY);
+end;
+
+local function SetWatermarkPosition(Position)
+	Library.Watermark.AnchorPoint = Vector2.new(0.5, 0);
+	Library.Watermark.Position = Position;
+end;
+
+local function SaveWatermarkPosition()
+	if not WatermarkFile or not writefile then
+		return;
+	end;
+	local Screen = ScreenGui.AbsoluteSize;
+	if Screen.X <= 0 or Screen.Y <= 0 then
+		return;
+	end;
+	local Watermark = Library.Watermark;
+	local X = (Watermark.AbsolutePosition.X + Watermark.AbsoluteSize.X * 0.5) / Screen.X;
+	local Y = Watermark.AbsolutePosition.Y / Screen.Y;
+	pcall(writefile, WatermarkFile, string.format('%.4f,%.4f', X, Y));
+end;
+
+local function LoadWatermarkPosition()
+	if WatermarkFile and isfile and readfile and isfile(WatermarkFile) then
+		local X, Y = readfile(WatermarkFile):match('^(%-?[%d%.]+),(%-?[%d%.]+)$');
+		X, Y = tonumber(X), tonumber(Y);
+		if X and Y then
+			SetWatermarkPosition(UDim2.new(math.clamp(X, 0, 1), 0, math.clamp(Y, -0.1, 0.95), 0));
+			return true;
+		end;
+	end;
+	SetWatermarkPosition(GetDefaultWatermarkPosition());
+	return false;
+end;
+
+function Library:SetWatermarkSaveFile(Path)
+	WatermarkFile = Path;
+	return LoadWatermarkPosition();
+end;
+
+function Library:ResetWatermarkPosition()
+	if WatermarkFile and isfile and delfile and isfile(WatermarkFile) then
+		pcall(delfile, WatermarkFile);
+	end;
+	SetWatermarkPosition(GetDefaultWatermarkPosition());
+end;
+
+SetWatermarkPosition(GetDefaultWatermarkPosition());
+
+do
+	local DragStartPosition = nil;
+
+	Library:GiveSignal(Library.Watermark.InputBegan:Connect(function(Input)
+		if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then
+			DragStartPosition = Library.Watermark.Position;
+		elseif Input.UserInputType == Enum.UserInputType.MouseButton2 then
+			Library:ResetWatermarkPosition();
+			Library:Notify('Watermark position reset', 2);
+		end;
+	end));
+
+	Library:GiveSignal(InputService.InputEnded:Connect(function(Input)
+		if not DragStartPosition then
+			return;
+		end;
+		if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then
+			local StartPosition = DragStartPosition;
+			DragStartPosition = nil;
+			task.delay(0.1, function()
+				if Library.Watermark.Position ~= StartPosition then
+					SaveWatermarkPosition();
+				end;
+			end);
+		end;
+	end));
 end;
 
 Library:Loop(1, function()
