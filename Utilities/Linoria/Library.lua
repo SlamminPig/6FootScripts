@@ -1464,10 +1464,11 @@ do
 				);
 
 				Button.InputBegan:Connect(function(Input)
-					if Input.UserInputType ~= Enum.UserInputType.MouseButton1 or Input.UserInputType ~= Enum.UserInputType.Touch then
+					if Input.UserInputType ~= Enum.UserInputType.MouseButton1 and Input.UserInputType ~= Enum.UserInputType.Touch then
 						return
 					end
 
+					self:Hide()
 					Callback()
 				end)
 			end
@@ -1482,6 +1483,7 @@ do
 					return Library:Notify('You have not copied a color!', 2)
 				end
 				ColorPicker:SetValueRGB(Library.ColorClipboard)
+				Library:AttemptSave()
 			end)
 
 			ContextMenu:AddOption('Copy HEX', function()
@@ -1692,13 +1694,13 @@ do
 					ColorPicker:Hide();
 				end;
 
-				if not Library:MouseIsOverFrame(ContextMenu.Container) then
+				if not Library:MouseIsOverFrame(ContextMenu.Container, Input) then
 					ContextMenu:Hide()
 				end
 			end;
 
 			if Input.UserInputType == Enum.UserInputType.MouseButton2 and ContextMenu.Container.Visible then
-				if not Library:MouseIsOverFrame(ContextMenu.Container) and not Library:MouseIsOverFrame(DisplayFrame) then
+				if not Library:MouseIsOverFrame(ContextMenu.Container, Input) and not Library:MouseIsOverFrame(DisplayFrame, Input) then
 					ContextMenu:Hide()
 				end
 			end
