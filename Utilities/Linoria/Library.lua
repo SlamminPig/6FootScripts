@@ -13,16 +13,12 @@ local Mouse = LocalPlayer:GetMouse();
 
 local ProtectGui = protectgui or (syn and syn.protect_gui) or (function() end);
 local GetHUI = gethui or (function() return CoreGui end);
-local weirdExecutors = {'Velocity'}
---local IsKrampus = ((identifyexecutor or (function() return "" end))():lower() == "krampus");
 
-local function isWeirdExecutor()
-	if not identifyexecutor then return false end
-	if table.find(weirdExecutors, tostring(identifyexecutor())) then
-		return true
-	end
-	return false
-end
+local function Elevate()
+	if setthreadidentity then
+		pcall(setthreadidentity, 8);
+	end;
+end;
 
 local OldLibrary = getgenv().Library;
 if type(OldLibrary) == 'table' and type(OldLibrary.Unload) == 'function' and not OldLibrary.Unloaded then
@@ -177,11 +173,16 @@ function Library:SafeCallback(f, ...)
 		return;
 	end;
 
+	Elevate();
+
 	if not Library.NotifyOnError then
-		return f(...);
+		local Results = table.pack(f(...));
+		Elevate();
+		return table.unpack(Results, 1, Results.n);
 	end;
 
 	local success, event = pcall(f, ...);
+	Elevate();
 
 	if not success then
 		local _, i = event:find(":%d+: ");
@@ -539,6 +540,7 @@ function Library:MouseIsOverFrame(Frame, Input)
 end;
 
 function Library:UpdateDependencyBoxes()
+	Elevate();
 	for _, Depbox in next, Library.DependencyBoxes do
 		Depbox:Update();
 	end;
@@ -678,6 +680,7 @@ end
 function Library:Loop(Interval, Callback)
 	return Library:Spawn(function()
 		while not Library.Unloaded do
+			Elevate()
 			local Success, Error = pcall(Callback)
 			if not Success then
 				warn(Error)
@@ -2100,6 +2103,7 @@ do
 		Label.Container = Container;
 
 		function Label:SetText(Text)
+			Elevate();
 			TextLabel.Text = Text
 
 			if DoesWrap then
@@ -2616,7 +2620,6 @@ do
 		end
 
 		function Toggle:Display()
-			--if IsKrampus or setthreadcaps then setthreadcaps(8) end
 			ToggleInner.BackgroundColor3 = Toggle.Value and Library.AccentColor or Library.MainColor;
 			ToggleInner.BorderColor3 = Toggle.Value and Library.AccentColorDark or Library.OutlineColor;
 
@@ -2631,6 +2634,7 @@ do
 		end;
 
 		function Toggle:SetValue(Bool)
+			Elevate();
 			Bool = (not not Bool);
 
 			Toggle.Value = Bool;
@@ -3765,7 +3769,7 @@ function Library:Notify(Text, Time, SoundId)
 	local XSize, YSize = Library:GetTextBounds(Text, Library.Font, 14);
 
 	YSize = YSize + 7
-	if isWeirdExecutor() and setthreadidentity then setthreadidentity(8) end	
+	Elevate();
 	local NotifyOuter = Library:Create('Frame', {
 		BorderColor3 = Color3.new(0, 0, 0);
 		Position = UDim2.new(0, 100, 0, 10);
@@ -3857,8 +3861,10 @@ function Library:Notify(Text, Time, SoundId)
 			return;
 		end;
 		Closed = true;
+		Elevate();
 		pcall(NotifyOuter.TweenSize, NotifyOuter, UDim2.new(0, 0, 0, YSize), 'Out', 'Quad', 0.4, true);
 		task.delay(0.4, function()
+			Elevate();
 			NotifyOuter:Destroy();
 		end);
 	end;
