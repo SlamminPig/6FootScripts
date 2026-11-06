@@ -3733,6 +3733,7 @@ do
 end;
 
 function Library:SetWatermarkVisibility(Bool)
+	Elevate();
 	Library.Watermark.Visible = Bool;
 end;
 
@@ -3939,6 +3940,7 @@ Library.WatermarkTokens = {
 local WatermarkTemplate = nil;
 
 local function ApplyWatermarkText(Text)
+	Elevate();
 	local X, Y = Library:GetTextBounds(Text, Library.Font, 14);
 	Library.Watermark.Size = UDim2.new(0, X + 15, 0, (Y * 1.5) + 3);
 	Library.WatermarkText.Text = Text;
@@ -3951,6 +3953,7 @@ local function FormatWatermark(Template)
 			return nil;
 		end;
 		local Success, Value = pcall(Token);
+		Elevate();
 		return Success and tostring(Value) or '?';
 	end));
 end;
