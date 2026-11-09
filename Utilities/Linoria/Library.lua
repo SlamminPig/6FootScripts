@@ -6157,7 +6157,7 @@ end;
 local function OnPlayerChange()
 	local PlayerList = GetPlayersString();
 
-	for _, Value in next, Options do
+	for _, Value in next, table.clone(Options) do
 		if Value.Type == 'Dropdown' and Value.SpecialType == 'Player' then
 			Value:SetValues(PlayerList);
 		end;
