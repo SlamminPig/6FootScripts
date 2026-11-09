@@ -77,11 +77,28 @@ local SaveManager = {} do
 		self.Folder = folder:gsub('/+$', '')
 		self:BuildFolderTree()
 		self:ApplyWatermarkFile()
+		self:ApplyUISettingsFile()
+		self:ApplyTabFile()
 	end
 
 	function SaveManager:ApplyWatermarkFile()
 		if self.Library and self.Library.SetWatermarkSaveFile then
 			self.Library:SetWatermarkSaveFile(self.Folder .. '/settings/watermark.txt')
+		end
+	end
+
+	function SaveManager:ApplyUISettingsFile()
+		if self.Library and self.Library.SetUISettingsFile then
+			local root = self.Folder:match('^[^/]+')
+			if root then
+				self.Library:SetUISettingsFile(root .. '/settings/LinoriaUI.json')
+			end
+		end
+	end
+
+	function SaveManager:ApplyTabFile()
+		if self.Library and self.Library.SetTabSaveFile then
+			self.Library:SetTabSaveFile(self.Folder .. '/settings/lasttab.txt')
 		end
 	end
 
@@ -216,7 +233,10 @@ local SaveManager = {} do
 
 	function SaveManager:SetLibrary(library)
 		self.Library = library
+		self:SetIgnoreIndexes({ 'MenuKeybind' })
 		self:ApplyWatermarkFile()
+		self:ApplyUISettingsFile()
+		self:ApplyTabFile()
 	end
 
 	function SaveManager:LoadAutoloadConfig()
