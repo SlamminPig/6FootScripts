@@ -7,6 +7,7 @@ local Players: Players = cloneref(game:GetService('Players'));
 local RunService: RunService = cloneref(game:GetService('RunService'));
 local TweenService: TweenService = cloneref(game:GetService('TweenService'));
 local GuiService: GuiService = cloneref(game:GetService('GuiService'));
+local HttpService: HttpService = cloneref(game:GetService('HttpService'));
 local RenderStepped = RunService.RenderStepped;
 local LocalPlayer = Players.LocalPlayer;
 local Mouse = LocalPlayer:GetMouse();
@@ -79,6 +80,8 @@ local Library = {
 
 pcall(function() Library.DevicePlatform = InputService:GetPlatform(); end); 
 Library.IsMobile = (Library.DevicePlatform == Enum.Platform.Android or Library.DevicePlatform == Enum.Platform.IOS);
+Library.ElementHeight = Library.IsMobile and 26 or 20;
+Library.ToggleSize = Library.IsMobile and 17 or 13;
 
 if Library.IsMobile then
 	Library.MinSize = Vector2.new(550, 200); 
@@ -441,9 +444,14 @@ function Library:AddToolTip(InfoStr, HoverInstance)
 	});
 
 	local IsHovering = false
+	local TouchShown = false
 
 	HoverInstance.MouseEnter:Connect(function()
-		if Library:MouseIsOverOpenedFrame() then
+		if TouchShown or Library.PickerOpen or Library:MouseIsOverOpenedFrame() then
+			return
+		end
+
+		if InputService:GetLastInputType() == Enum.UserInputType.Touch then
 			return
 		end
 
@@ -454,19 +462,86 @@ function Library:AddToolTip(InfoStr, HoverInstance)
 
 		while IsHovering do
 			RunService.Heartbeat:Wait()
+			if Library.PickerOpen then
+				IsHovering = false
+				Tooltip.Visible = false
+				break
+			end
 			Tooltip.Position = UDim2.fromOffset(Mouse.X + 15, Mouse.Y + 12)
 		end
 	end)
 
 	HoverInstance.MouseLeave:Connect(function()
 		IsHovering = false
-		Tooltip.Visible = false
+		if not TouchShown then
+			Tooltip.Visible = false
+		end
+	end)
+
+	local function HideTouchTooltip()
+		if TouchShown then
+			TouchShown = false
+			Tooltip.Visible = false
+		end
+	end
+
+	local function ShowTouchTooltip()
+		local Screen = Library.ScreenGui.AbsoluteSize
+		local Position, Size = HoverInstance.AbsolutePosition, HoverInstance.AbsoluteSize
+		local Width, Height = Tooltip.AbsoluteSize.X, Tooltip.AbsoluteSize.Y
+
+		local X = math.clamp(Position.X, 4, math.max(4, Screen.X - Width - 4))
+		local Y = Position.Y - Height - 8
+		if Y < 4 then
+			Y = Position.Y + Size.Y + 8
+		end
+
+		IsHovering = false
+		TouchShown = true
+		Tooltip.Position = UDim2.fromOffset(X, Y)
+		Tooltip.Visible = true
+
+		local Connection
+		Connection = InputService.InputBegan:Connect(function(Input)
+			if Input.UserInputType == Enum.UserInputType.Touch or Input.UserInputType == Enum.UserInputType.MouseButton1 then
+				Connection:Disconnect()
+				HideTouchTooltip()
+			end
+		end)
+
+	end
+
+	HoverInstance.InputBegan:Connect(function(Input)
+		if Input.UserInputType ~= Enum.UserInputType.Touch or Library.PickerOpen or Library:MouseIsOverOpenedFrame(Input) then
+			return
+		end
+
+		local Start = Input.Position
+
+		task.delay(0.45, function()
+			if Input.UserInputState == Enum.UserInputState.End or Input.UserInputState == Enum.UserInputState.Cancel then
+				return
+			end
+
+			if (Input.Position - Start).Magnitude > 10 or Library.PickerOpen then
+				return
+			end
+
+			Library.LongPressInput = Input
+
+			if Library.CancelPendingTap then
+				Library.CancelPendingTap()
+			end
+
+			ShowTouchTooltip()
+		end)
 	end)
 
 	if LibraryMainOuterFrame then
 		LibraryMainOuterFrame:GetPropertyChangedSignal("Visible"):Connect(function() 
 			if LibraryMainOuterFrame.Visible == false then
 				IsHovering = false
+				TouchShown = false
 				Tooltip.Visible = false
 			end
 		end)
@@ -485,8 +560,22 @@ function Library:OnHighlight(HighlightInstance, Instance, Properties, Properties
 			end;
 		end;
 	end
+	local function IsCovered()
+		if Library.PickerOpen then
+			return true;
+		end;
+
+		for Frame in next, Library.OpenedFrames do
+			if Frame.Visible and not HighlightInstance:IsDescendantOf(Frame) and Library:MouseIsOverFrame(Frame) then
+				return true;
+			end;
+		end;
+
+		return false;
+	end
+
 	local function doHighlight()
-		if condition and not condition() then undoHighlight() return end
+		if IsCovered() or (condition and not condition()) then undoHighlight() return end
 		local Reg = Library.RegistryMap[Instance];
 
 		for Property, ColorIdx in next, Properties do
@@ -1110,6 +1199,40 @@ Library:GiveSignal(ScreenGui.DescendantRemoving:Connect(function(Instance)
 	end;
 end))
 
+local TapTracker = nil;
+
+function Library.CancelPendingTap()
+	TapTracker = nil;
+end;
+
+local function TrackTap(Input, Scroller, Callback)
+	TapTracker = {
+		Start = Input.Position;
+		Scroller = Scroller;
+		Canvas = Scroller and Scroller.CanvasPosition;
+		Callback = Callback;
+	};
+end;
+
+Library:GiveSignal(InputService.InputEnded:Connect(function(Input)
+	if Input.UserInputType ~= Enum.UserInputType.Touch or not TapTracker then
+		return;
+	end;
+
+	local Tap = TapTracker;
+	TapTracker = nil;
+
+	if (Input.Position - Tap.Start).Magnitude > 10 then
+		return;
+	end;
+
+	if Tap.Scroller and (Tap.Scroller.CanvasPosition - Tap.Canvas).Magnitude > 2 then
+		return;
+	end;
+
+	Tap.Callback();
+end));
+
 local BaseAddons = {};
 
 do
@@ -1654,13 +1777,38 @@ do
 				return;
 			end;
 
-			if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then
+			if Input.UserInputType == Enum.UserInputType.MouseButton1 then
 				if PickerFrameOuter.Visible then
 					ColorPicker:Hide()
 				else
 					ContextMenu:Hide()
 					ColorPicker:Show()
 				end;
+			elseif Input.UserInputType == Enum.UserInputType.Touch then
+				local Start = Input.Position;
+
+				task.delay(0.45, function()
+					if Input.UserInputState == Enum.UserInputState.End or Input.UserInputState == Enum.UserInputState.Cancel then
+						return;
+					end;
+
+					if (Input.Position - Start).Magnitude > 10 then
+						return;
+					end;
+
+					Library.CancelPendingTap();
+					ColorPicker:Hide();
+					ContextMenu:Show();
+				end);
+
+				TrackTap(Input, DisplayFrame:FindFirstAncestorWhichIsA('ScrollingFrame'), function()
+					if PickerFrameOuter.Visible then
+						ColorPicker:Hide()
+					else
+						ContextMenu:Hide()
+						ColorPicker:Show()
+					end;
+				end);
 			elseif Input.UserInputType == Enum.UserInputType.MouseButton2 then
 				ContextMenu:Show()
 				ColorPicker:Hide()
@@ -2053,6 +2201,526 @@ do
 	end;
 end;
 
+local PICKER_ROW_HEIGHT = 34;
+
+local MobilePicker = {
+	Owner = nil;
+	OnClose = nil;
+	SearchText = '';
+	Rows = {};
+};
+
+function MobilePicker:Build()
+	if self.Window then
+		return;
+	end;
+
+	local Overlay = Library:Create('TextButton', {
+		AutoButtonColor = false;
+		BackgroundColor3 = Color3.new(0, 0, 0);
+		BackgroundTransparency = 0.45;
+		BorderSizePixel = 0;
+		Position = UDim2.fromOffset(0, -100);
+		Size = UDim2.new(1, 0, 1, 100);
+		Text = '';
+		Visible = false;
+		ZIndex = 400;
+		Parent = ScreenGui;
+	});
+
+	local Window = Library:Create('Frame', {
+		Active = true;
+		AnchorPoint = Vector2.new(0.5, 0.5);
+		BackgroundColor3 = Color3.new(0, 0, 0);
+		BorderSizePixel = 0;
+		Position = UDim2.fromScale(0.5, 0.5);
+		Size = UDim2.fromOffset(320, 360);
+		Visible = false;
+		ZIndex = 401;
+		Parent = ScreenGui;
+	});
+
+	local Inner = Library:Create('Frame', {
+		BackgroundColor3 = Library.MainColor;
+		BorderColor3 = Library.AccentColor;
+		BorderMode = Enum.BorderMode.Inset;
+		Position = UDim2.fromOffset(1, 1);
+		Size = UDim2.new(1, -2, 1, -2);
+		ZIndex = 402;
+		Parent = Window;
+	});
+
+	Library:AddToRegistry(Inner, {
+		BackgroundColor3 = 'MainColor';
+		BorderColor3 = 'AccentColor';
+	});
+
+	local Title = Library:CreateLabel({
+		Position = UDim2.fromOffset(8, 0);
+		Size = UDim2.new(1, -48, 0, 30);
+		Text = '';
+		TextSize = 15;
+		TextTruncate = Enum.TextTruncate.AtEnd;
+		TextXAlignment = Enum.TextXAlignment.Left;
+		ZIndex = 403;
+		Parent = Inner;
+	});
+
+	local CloseButton = Library:Create('TextButton', {
+		AnchorPoint = Vector2.new(1, 0);
+		AutoButtonColor = false;
+		BackgroundColor3 = Library.BackgroundColor;
+		BorderColor3 = Library.OutlineColor;
+		Font = Library.Font;
+		Position = UDim2.new(1, -6, 0, 3);
+		Size = UDim2.fromOffset(28, 24);
+		Text = 'X';
+		TextColor3 = Library.FontColor;
+		TextSize = 15;
+		ZIndex = 404;
+		Parent = Inner;
+	});
+
+	Library:ApplyTextStroke(CloseButton);
+	Library:AddToRegistry(CloseButton, {
+		BackgroundColor3 = 'BackgroundColor';
+		BorderColor3 = 'OutlineColor';
+		TextColor3 = 'FontColor';
+	});
+
+	local SearchOuter = Library:Create('Frame', {
+		BackgroundColor3 = Library.BackgroundColor;
+		BorderColor3 = Library.OutlineColor;
+		Position = UDim2.fromOffset(8, 32);
+		Size = UDim2.new(1, -16, 0, 26);
+		ZIndex = 403;
+		Parent = Inner;
+	});
+
+	Library:AddToRegistry(SearchOuter, {
+		BackgroundColor3 = 'BackgroundColor';
+		BorderColor3 = 'OutlineColor';
+	});
+
+	local SearchBox = Library:Create('TextBox', {
+		BackgroundTransparency = 1;
+		ClearTextOnFocus = false;
+		Font = Library.Font;
+		PlaceholderColor3 = Color3.fromRGB(150, 150, 150);
+		PlaceholderText = 'Search...';
+		Position = UDim2.fromOffset(6, 0);
+		Size = UDim2.new(1, -12, 1, 0);
+		Text = '';
+		TextColor3 = Library.FontColor;
+		TextSize = 14;
+		TextXAlignment = Enum.TextXAlignment.Left;
+		ZIndex = 404;
+		Parent = SearchOuter;
+	});
+
+	Library:ApplyTextStroke(SearchBox);
+	Library:AddToRegistry(SearchBox, {
+		TextColor3 = 'FontColor';
+	});
+
+	local ListOuter = Library:Create('Frame', {
+		BackgroundColor3 = Library.BackgroundColor;
+		BorderColor3 = Library.OutlineColor;
+		Position = UDim2.fromOffset(8, 64);
+		Size = UDim2.new(1, -16, 1, -72);
+		ZIndex = 403;
+		Parent = Inner;
+	});
+
+	Library:AddToRegistry(ListOuter, {
+		BackgroundColor3 = 'BackgroundColor';
+		BorderColor3 = 'OutlineColor';
+	});
+
+	local Scroller = Library:Create('ScrollingFrame', {
+		BackgroundTransparency = 1;
+		BorderSizePixel = 0;
+		CanvasSize = UDim2.new(0, 0, 0, 0);
+		ScrollingDirection = Enum.ScrollingDirection.Y;
+		Size = UDim2.new(1, 0, 1, 0);
+		VerticalScrollBarInset = Enum.ScrollBarInset.ScrollBar;
+		TopImage = 'rbxasset://textures/ui/Scroll/scroll-middle.png';
+		BottomImage = 'rbxasset://textures/ui/Scroll/scroll-middle.png';
+		ScrollBarThickness = 12;
+		ScrollBarImageColor3 = Library.AccentColor;
+		ZIndex = 404;
+		Parent = ListOuter;
+	});
+
+	Library:AddToRegistry(Scroller, {
+		ScrollBarImageColor3 = 'AccentColor';
+	});
+
+	Library:Create('UIListLayout', {
+		FillDirection = Enum.FillDirection.Vertical;
+		SortOrder = Enum.SortOrder.LayoutOrder;
+		Parent = Scroller;
+	});
+
+	local Empty = Library:CreateLabel({
+		Size = UDim2.new(1, 0, 0, 30);
+		Text = 'No results';
+		TextSize = 14;
+		Visible = false;
+		ZIndex = 405;
+		Parent = ListOuter;
+	});
+
+	local DoneButton = Library:Create('TextButton', {
+		AnchorPoint = Vector2.new(0, 1);
+		AutoButtonColor = false;
+		BackgroundColor3 = Library.BackgroundColor;
+		BorderColor3 = Library.AccentColor;
+		Font = Library.Font;
+		Position = UDim2.new(0, 8, 1, -8);
+		Size = UDim2.new(1, -16, 0, 30);
+		Text = 'Done';
+		TextColor3 = Library.FontColor;
+		TextSize = 15;
+		Visible = false;
+		ZIndex = 404;
+		Parent = Inner;
+	});
+
+	Library:ApplyTextStroke(DoneButton);
+	Library:AddToRegistry(DoneButton, {
+		BackgroundColor3 = 'BackgroundColor';
+		BorderColor3 = 'AccentColor';
+		TextColor3 = 'FontColor';
+	});
+
+	local function CreateActionButton(Text, Index)
+		local Button = Library:Create('TextButton', {
+			AnchorPoint = Vector2.new(0, 1);
+			AutoButtonColor = false;
+			BackgroundColor3 = Library.BackgroundColor;
+			BorderColor3 = Library.OutlineColor;
+			Font = Library.Font;
+			Position = UDim2.new(Index / 3, 8 + Index * (8 - 32 / 3), 1, -8);
+			Size = UDim2.new(1 / 3, -32 / 3, 0, 30);
+			Text = Text;
+			TextColor3 = Library.FontColor;
+			TextSize = 15;
+			Visible = false;
+			ZIndex = 404;
+			Parent = Inner;
+		});
+
+		Library:ApplyTextStroke(Button);
+		Library:AddToRegistry(Button, {
+			BackgroundColor3 = 'BackgroundColor';
+			BorderColor3 = 'OutlineColor';
+			TextColor3 = 'FontColor';
+		});
+
+		return Button;
+	end;
+
+	local AllButton = CreateActionButton('All', 0);
+	local ClearButton = CreateActionButton('Clear', 1);
+
+	self.Overlay = Overlay;
+	self.Window = Window;
+	self.Title = Title;
+	self.SearchBox = SearchBox;
+	self.ListOuter = ListOuter;
+	self.Scroller = Scroller;
+	self.Empty = Empty;
+	self.DoneButton = DoneButton;
+	self.AllButton = AllButton;
+	self.ClearButton = ClearButton;
+
+	local function IsOutsideWindow(Position)
+		local WindowPosition, WindowSize = Window.AbsolutePosition, Window.AbsoluteSize;
+
+		return Position.X < WindowPosition.X or Position.X > WindowPosition.X + WindowSize.X
+			or Position.Y < WindowPosition.Y or Position.Y > WindowPosition.Y + WindowSize.Y;
+	end;
+
+	Overlay.InputBegan:Connect(function(Input)
+		if not IsOutsideWindow(Input.Position) then
+			return;
+		end;
+
+		if Input.UserInputType == Enum.UserInputType.Touch then
+			TrackTap(Input, nil, function()
+				MobilePicker:Close();
+			end);
+		elseif Input.UserInputType == Enum.UserInputType.MouseButton1 then
+			MobilePicker:Close();
+		end;
+	end);
+
+	CloseButton.MouseButton1Click:Connect(function()
+		MobilePicker:Close();
+	end);
+
+	DoneButton.MouseButton1Click:Connect(function()
+		MobilePicker:Close();
+	end);
+
+	local function ConfirmOnSecondPress(Button, Text, Bool)
+		local Armed = 0;
+
+		local function Reset()
+			Armed = 0;
+			Button.Text = Text;
+			Button.TextColor3 = Library.FontColor;
+			Library.RegistryMap[Button].Properties.TextColor3 = 'FontColor';
+		end;
+
+		Button.MouseButton1Click:Connect(function()
+			if os.clock() - Armed < 1 then
+				Reset();
+				MobilePicker:SetShown(Bool);
+				return;
+			end;
+
+			local Stamp = os.clock();
+			Armed = Stamp;
+			Button.Text = 'Sure?';
+			Button.TextColor3 = Library.AccentColor;
+			Library.RegistryMap[Button].Properties.TextColor3 = 'AccentColor';
+
+			task.delay(1, function()
+				if Armed == Stamp then
+					Reset();
+				end;
+			end);
+		end);
+	end;
+
+	ConfirmOnSecondPress(AllButton, 'All', true);
+	ConfirmOnSecondPress(ClearButton, 'Clear', false);
+
+	SearchBox:GetPropertyChangedSignal('Text'):Connect(function()
+		if not MobilePicker.Owner or SearchBox.Text == MobilePicker.SearchText then
+			return;
+		end;
+
+		MobilePicker.SearchText = SearchBox.Text;
+		MobilePicker:Refresh();
+		Scroller.CanvasPosition = Vector2.zero;
+	end);
+
+	ScreenGui:GetPropertyChangedSignal('AbsoluteSize'):Connect(function()
+		if MobilePicker.Owner then
+			MobilePicker:Layout();
+		end;
+	end);
+end;
+
+function MobilePicker:Layout()
+	local Screen = ScreenGui.AbsoluteSize;
+	local Width = math.clamp(Screen.X - 40, 220, 360);
+	local Height = math.clamp(Screen.Y - 40, 200, 440);
+
+	self.Window.Size = UDim2.fromOffset(Width, Height);
+	self.ListOuter.Size = UDim2.new(1, -16, 1, -(64 + (self.DoneButton.Visible and 46 or 8)));
+
+	local Multi = self.Owner ~= nil and self.Owner.Multi == true;
+
+	self.AllButton.Visible = Multi;
+	self.ClearButton.Visible = Multi;
+
+	if Multi then
+		self.DoneButton.Position = UDim2.new(2 / 3, 8 + 2 * (8 - 32 / 3), 1, -8);
+		self.DoneButton.Size = UDim2.new(1 / 3, -32 / 3, 0, 30);
+	else
+		self.DoneButton.Position = UDim2.new(0, 8, 1, -8);
+		self.DoneButton.Size = UDim2.new(1, -16, 0, 30);
+	end;
+end;
+
+function MobilePicker:SetShown(Bool)
+	local Owner = self.Owner;
+
+	if not Owner or not Owner.Multi or not self.ShownValues then
+		return;
+	end;
+
+	Owner:SetMany(self.ShownValues, Bool);
+
+	if self.Owner == Owner then
+		self:UpdateRows();
+	end;
+end;
+
+function MobilePicker:ClearRows()
+	for _, Row in next, self.Rows do
+		Row.Frame:Destroy();
+	end;
+
+	table.clear(self.Rows);
+end;
+
+function MobilePicker:UpdateRows()
+	local Owner = self.Owner;
+
+	for _, Row in next, self.Rows do
+		local Selected = Owner ~= nil and Owner:IsValueSelected(Row.Value);
+
+		Row.Label.TextColor3 = Selected and Library.AccentColor or Library.FontColor;
+		Row.Frame.BorderColor3 = Selected and Library.AccentColor or Library.OutlineColor;
+
+		Library.RegistryMap[Row.Label].Properties.TextColor3 = Selected and 'AccentColor' or 'FontColor';
+		Library.RegistryMap[Row.Frame].Properties.BorderColor3 = Selected and 'AccentColor' or 'OutlineColor';
+	end;
+end;
+
+function MobilePicker:Refresh()
+	local Owner = self.Owner;
+
+	if not Owner then
+		return;
+	end;
+
+	self:ClearRows();
+
+	local Values = self.SearchText ~= '' and Library:FuzzyFilter(self.SearchText, Owner.Values) or Owner.Values;
+	local Count = 0;
+
+	self.ShownValues = Values;
+
+	for _, Value in next, Values do
+		Count = Count + 1;
+
+		local Frame = Library:Create('Frame', {
+			BackgroundColor3 = Library.MainColor;
+			BorderColor3 = Library.OutlineColor;
+			BorderMode = Enum.BorderMode.Inset;
+			LayoutOrder = Count;
+			Size = UDim2.new(1, 0, 0, PICKER_ROW_HEIGHT);
+			ZIndex = 405;
+			Parent = self.Scroller;
+		});
+
+		Library:AddToRegistry(Frame, {
+			BackgroundColor3 = 'MainColor';
+			BorderColor3 = 'OutlineColor';
+		});
+
+		local Label = Library:CreateLabel({
+			Position = UDim2.fromOffset(10, 0);
+			Size = UDim2.new(1, -14, 1, 0);
+			Text = tostring(Value);
+			TextSize = 15;
+			TextTruncate = Enum.TextTruncate.AtEnd;
+			TextXAlignment = Enum.TextXAlignment.Left;
+			ZIndex = 406;
+			Parent = Frame;
+		});
+
+		Frame.InputBegan:Connect(function(Input)
+			if Input.UserInputType == Enum.UserInputType.Touch then
+				TrackTap(Input, MobilePicker.Scroller, function()
+					MobilePicker:Choose(Value);
+				end);
+			elseif Input.UserInputType == Enum.UserInputType.MouseButton1 then
+				MobilePicker:Choose(Value);
+			end;
+		end);
+
+		table.insert(self.Rows, { Frame = Frame; Label = Label; Value = Value });
+	end;
+
+	self.Scroller.CanvasSize = UDim2.fromOffset(0, Count * PICKER_ROW_HEIGHT);
+	self.Empty.Visible = Count == 0;
+	self:UpdateRows();
+end;
+
+function MobilePicker:ScrollToSelected()
+	local Owner = self.Owner;
+
+	if not Owner then
+		return;
+	end;
+
+	for Index, Row in next, self.Rows do
+		if Owner:IsValueSelected(Row.Value) then
+			local Y = (Index - 1) * PICKER_ROW_HEIGHT - (self.Scroller.AbsoluteSize.Y - PICKER_ROW_HEIGHT) / 2;
+			self.Scroller.CanvasPosition = Vector2.new(0, math.max(0, Y));
+			return;
+		end;
+	end;
+end;
+
+function MobilePicker:Choose(Value)
+	local Owner = self.Owner;
+
+	if not Owner then
+		return;
+	end;
+
+	Owner:SelectValue(Value);
+
+	if self.Owner == Owner then
+		self:UpdateRows();
+	end;
+end;
+
+function MobilePicker:Open(Owner, TitleText, OnClose)
+	self:Build();
+
+	if self.Owner and self.Owner ~= Owner then
+		self:Close();
+	end;
+
+	self.Owner = Owner;
+	self.OnClose = OnClose;
+	self.SearchText = '';
+	self.SearchBox.Text = '';
+	self.Title.Text = TitleText;
+	self.DoneButton.Visible = true;
+
+	self:Layout();
+
+	self.Overlay.Visible = true;
+	self.Window.Visible = true;
+	Library.OpenedFrames[self.Window] = true;
+	Library.PickerOpen = true;
+	Library.CanDrag = false;
+
+	self:Refresh();
+	self.Scroller.CanvasPosition = Vector2.zero;
+
+	task.defer(function()
+		MobilePicker:ScrollToSelected();
+	end);
+end;
+
+function MobilePicker:Close()
+	if not self.Owner then
+		return;
+	end;
+
+	local OnClose = self.OnClose;
+
+	self.Owner = nil;
+	self.OnClose = nil;
+
+	if self.SearchBox:IsFocused() then
+		self.SearchBox:ReleaseFocus();
+	end;
+
+	self.Overlay.Visible = false;
+	self.Window.Visible = false;
+	Library.OpenedFrames[self.Window] = nil;
+	Library.PickerOpen = false;
+	Library.CanDrag = true;
+
+	self:ClearRows();
+
+	if OnClose then
+		OnClose();
+	end;
+end;
+
 local BaseGroupbox = {};
 
 do
@@ -2151,7 +2819,7 @@ do
 			local Outer = Library:Create('Frame', {
 				BackgroundColor3 = Color3.new(0, 0, 0);
 				BorderColor3 = Color3.new(0, 0, 0);
-				Size = UDim2.new(1, -4, 0, 20);
+				Size = UDim2.new(1, -4, 0, Library.ElementHeight);
 				ZIndex = 5;
 			});
 
@@ -2230,8 +2898,7 @@ do
 				end
 			end
 
-			Button.Outer.InputBegan:Connect(function(Input)
-				if not ValidateClick(Input) then return end
+			local function Press()
 				if Button.Locked then return end
 
 				if Button.DoubleClick then
@@ -2259,6 +2926,18 @@ do
 				end
 
 				Library:SafeCallback(Button.Func);
+			end
+
+			Button.Outer.InputBegan:Connect(function(Input)
+				if not ValidateClick(Input) then return end
+
+				if Input.UserInputType == Enum.UserInputType.Touch then
+					TrackTap(Input, Button.Outer:FindFirstAncestorWhichIsA('ScrollingFrame'), function()
+						task.spawn(Press)
+					end)
+				else
+					Press()
+				end
 			end)
 		end
 
@@ -2279,7 +2958,7 @@ do
 
 			ProcessButtonParams('SubButton', SubButton, ...)
 
-			self.Outer.Size = UDim2.new(0.5, -2, 0, 20)
+			self.Outer.Size = UDim2.new(0.5, -2, 0, Library.ElementHeight)
 
 			SubButton.Outer, SubButton.Inner, SubButton.Label = CreateBaseButton(SubButton)
 
@@ -2379,7 +3058,7 @@ do
 		local TextBoxOuter = Library:Create('Frame', {
 			BackgroundColor3 = Color3.new(0, 0, 0);
 			BorderColor3 = Color3.new(0, 0, 0);
-			Size = UDim2.new(1, -4, 0, 20);
+			Size = UDim2.new(1, -4, 0, Library.ElementHeight);
 			ZIndex = 5;
 			Parent = Container;
 		});
@@ -2552,7 +3231,7 @@ do
 		local ToggleOuter = Library:Create('Frame', {
 			BackgroundColor3 = Color3.new(0, 0, 0);
 			BorderColor3 = Color3.new(0, 0, 0);
-			Size = UDim2.new(0, 13, 0, 13);
+			Size = UDim2.new(0, Library.ToggleSize, 0, Library.ToggleSize);
 			ZIndex = 5;
 			Parent = Container;
 		});
@@ -2653,12 +3332,20 @@ do
 		end;
 
 		ToggleRegion.InputBegan:Connect(function(Input)
-			if (Input.UserInputType == Enum.UserInputType.MouseButton1 and not Library:MouseIsOverOpenedFrame()) or Input.UserInputType == Enum.UserInputType.Touch then
+			if Input.UserInputType == Enum.UserInputType.MouseButton1 and not Library:MouseIsOverOpenedFrame() then
 				for _, Addon in next, Toggle.Addons do
 					if Library:MouseIsOverFrame(Addon.DisplayFrame) then return end
 				end
-				Toggle:SetValue(not Toggle.Value) 
+				Toggle:SetValue(not Toggle.Value)
 				Library:AttemptSave();
+			elseif Input.UserInputType == Enum.UserInputType.Touch and not Library:MouseIsOverOpenedFrame(Input) then
+				for _, Addon in next, Toggle.Addons do
+					if Library:MouseIsOverFrame(Addon.DisplayFrame, Input) then return end
+				end
+				TrackTap(Input, ToggleRegion:FindFirstAncestorWhichIsA('ScrollingFrame'), function()
+					Toggle:SetValue(not Toggle.Value)
+					Library:AttemptSave();
+				end);
 			end;
 		end);
 
@@ -2669,7 +3356,7 @@ do
 		end
 
 		Toggle:Display();
-		Groupbox:AddBlank(Info.BlankSize or 5 + 2);
+		Groupbox:AddBlank(Info.BlankSize or (Library.IsMobile and 9 or 7));
 		Groupbox:Resize();
 
 		Toggle.TextLabel = ToggleLabel;
@@ -2720,7 +3407,7 @@ do
 		local SliderOuter = Library:Create('Frame', {
 			BackgroundColor3 = Color3.new(0, 0, 0);
 			BorderColor3 = Color3.new(0, 0, 0);
-			Size = UDim2.new(1, -4, 0, 13);
+			Size = UDim2.new(1, -4, 0, Library.ToggleSize);
 			ZIndex = 5;
 			Parent = Container;
 		});
@@ -2862,8 +3549,147 @@ do
 			Library:SafeCallback(Slider.Changed, Slider.Value);
 		end;
 
+		local function SetFromX(X)
+			local Offset = math.clamp(X - Fill.AbsolutePosition.X, 0, Slider.MaxSize);
+			local nValue = Slider:GetValueFromXScale(Library:MapValue(Offset, 0, Slider.MaxSize, 0, 1));
+
+			if nValue ~= Slider.Value then
+				Slider.Value = nValue;
+				Slider:Display();
+
+				Library:SafeCallback(Slider.Callback, Slider.Value);
+				Library:SafeCallback(Slider.Changed, Slider.Value);
+			end;
+		end;
+
+		local function IsTouchActive(Input)
+			return Input.UserInputState ~= Enum.UserInputState.End and Input.UserInputState ~= Enum.UserInputState.Cancel;
+		end;
+
+		local Editing = false;
+		local LastPress = 0;
+
+		local function OpenEditor()
+			if Editing or Library.IsMobile and Library.PickerOpen then
+				return;
+			end;
+
+			Editing = true;
+
+			local Box = Library:Create('TextBox', {
+				BackgroundColor3 = Library.MainColor;
+				BorderSizePixel = 0;
+				ClearTextOnFocus = false;
+				Font = Library.Font;
+				Size = UDim2.new(1, 0, 1, 0);
+				Text = tostring(Slider.Value);
+				TextColor3 = Library.FontColor;
+				TextSize = 14;
+				ZIndex = 10;
+				Parent = SliderInner;
+			});
+
+			Library:ApplyTextStroke(Box);
+			Box:CaptureFocus();
+
+			Box.FocusLost:Connect(function()
+				local Number = tonumber(Box.Text);
+
+				Box:Destroy();
+				Editing = false;
+
+				if Number then
+					Slider:SetValue(Round(math.clamp(Number, Slider.Min, Slider.Max)));
+					Library:AttemptSave();
+				end;
+			end);
+		end;
+
+		local function RegisterPress()
+			local Now = os.clock();
+
+			if Now - LastPress < 0.35 then
+				LastPress = 0;
+				OpenEditor();
+			else
+				LastPress = Now;
+			end;
+		end;
+
+		local function HandleSliderTouch(Input)
+			if Editing then
+				return;
+			end;
+
+			local Start = Input.Position;
+			local Scroller = SliderOuter:FindFirstAncestorWhichIsA('ScrollingFrame');
+			local CanvasStart = Scroller and Scroller.CanvasPosition;
+			local Dragging = false;
+
+			while IsTouchActive(Input) do
+				if Library.LongPressInput == Input then
+					return;
+				end;
+
+				local Delta = Input.Position - Start;
+
+				if math.abs(Delta.X) > 8 and math.abs(Delta.X) > math.abs(Delta.Y) then
+					Dragging = true;
+					break;
+				end;
+
+				if math.abs(Delta.Y) > 8 then
+					return;
+				end;
+
+				RenderStepped:Wait();
+			end;
+
+			if not Dragging then
+				if Library.LongPressInput == Input then
+					return;
+				end;
+
+				if (Input.Position - Start).Magnitude <= 10 and (not Scroller or (Scroller.CanvasPosition - CanvasStart).Magnitude <= 2) then
+					SetFromX(Input.Position.X);
+					Library:AttemptSave();
+					RegisterPress();
+				end;
+
+				return;
+			end;
+
+			Library.CanDrag = false;
+
+			if Scroller then
+				Scroller.ScrollingEnabled = false;
+			end;
+
+			while IsTouchActive(Input) do
+				SetFromX(Input.Position.X);
+				RenderStepped:Wait();
+			end;
+
+			if Scroller then
+				Scroller.ScrollingEnabled = true;
+			end;
+
+			if not Library.PickerOpen then
+				Library.CanDrag = true;
+			end;
+
+			Library:AttemptSave();
+		end;
+
 		SliderInner.InputBegan:Connect(function(Input)
-			if (Input.UserInputType == Enum.UserInputType.MouseButton1 and not Library:MouseIsOverOpenedFrame()) or Input.UserInputType == Enum.UserInputType.Touch then
+			if Input.UserInputType == Enum.UserInputType.Touch then
+				if not Library:MouseIsOverOpenedFrame(Input) then
+					HandleSliderTouch(Input);
+				end;
+				return;
+			end;
+
+			if Input.UserInputType == Enum.UserInputType.MouseButton1 and not Library:MouseIsOverOpenedFrame() then
 				if Library.IsMobile then
 					Library.CanDrag = false;
 				end;
@@ -2917,6 +3743,7 @@ do
 				end;
 
 				Library:AttemptSave();
+				RegisterPress();
 			end;
 		end);
 
@@ -2982,7 +3809,7 @@ do
 		local DropdownOuter = Library:Create('Frame', {
 			BackgroundColor3 = Color3.new(0, 0, 0);
 			BorderColor3 = Color3.new(0, 0, 0);
-			Size = UDim2.new(1, -4, 0, 20);
+			Size = UDim2.new(1, -4, 0, Library.ElementHeight);
 			ZIndex = 5;
 			Parent = Container;
 		});
@@ -3045,7 +3872,12 @@ do
 		end
 
 		local MAX_DROPDOWN_ITEMS = 8;
+		local ITEM_HEIGHT = Library.IsMobile and 26 or 20;
+		local UsePicker = Library.IsMobile and Info.MobilePicker ~= false;
+		local CurrentButtons = {};
 		local SearchHeight = Info.Searchable and 24 or 0;
+		local ActionsHeight = Info.Multi and 22 or 0;
+		local HeaderHeight = SearchHeight + ActionsHeight;
 		Dropdown.SearchText = '';
 
 		local ListOuter = Library:Create('Frame', {
@@ -3061,7 +3893,7 @@ do
 		end;
 
 		local function RecalculateListSize(YSize)
-			local Y = YSize or math.clamp(#Dropdown.Values * 20, 0, MAX_DROPDOWN_ITEMS * 20) + 1 + SearchHeight;
+			local Y = YSize or math.clamp(#Dropdown.Values * ITEM_HEIGHT, 0, MAX_DROPDOWN_ITEMS * ITEM_HEIGHT) + 1 + HeaderHeight;
 			ListOuter.Size = UDim2.fromOffset(DropdownOuter.AbsoluteSize.X + 0.5, Y)
 		end;
 
@@ -3089,8 +3921,8 @@ do
 			BackgroundTransparency = 1;
 			BorderSizePixel = 0;
 			CanvasSize = UDim2.new(0, 0, 0, 0);
-			Position = UDim2.fromOffset(0, SearchHeight);
-			Size = UDim2.new(1, 0, 1, -SearchHeight);
+			Position = UDim2.fromOffset(0, HeaderHeight);
+			Size = UDim2.new(1, 0, 1, -HeaderHeight);
 			ZIndex = 21;
 			Parent = ListInner;
 
@@ -3104,6 +3936,45 @@ do
 		Library:AddToRegistry(Scrolling, {
 			ScrollBarImageColor3 = 'AccentColor'
 		})
+
+		if Info.Multi then
+			local Actions = Library:Create('Frame', {
+				BackgroundTransparency = 1;
+				Position = UDim2.fromOffset(0, SearchHeight);
+				Size = UDim2.new(1, 0, 0, ActionsHeight);
+				ZIndex = 22;
+				Parent = ListInner;
+			});
+
+			local function AddAction(Text, Index, Bool)
+				local Label = Library:CreateLabel({
+					Position = UDim2.new(Index * 0.5, 0, 0, 0);
+					Size = UDim2.new(0.5, 0, 1, 0);
+					Text = Text;
+					TextSize = 13;
+					ZIndex = 23;
+					Parent = Actions;
+				});
+
+				Library:OnHighlight(Label, Label,
+					{ TextColor3 = 'AccentColor' },
+					{ TextColor3 = 'FontColor' }
+				);
+
+				Label.InputBegan:Connect(function(Input)
+					if Input.UserInputType == Enum.UserInputType.MouseButton1 then
+						Dropdown:SetMany(Dropdown:GetDisplayValues(), Bool);
+					elseif Input.UserInputType == Enum.UserInputType.Touch then
+						TrackTap(Input, nil, function()
+							Dropdown:SetMany(Dropdown:GetDisplayValues(), Bool);
+						end);
+					end;
+				end);
+			end;
+
+			AddAction('Select All', 0, true);
+			AddAction('Clear', 1, false);
+		end;
 
 		local SearchBox;
 		if Info.Searchable then
@@ -3218,9 +4089,60 @@ do
 			return Dropdown.Values;
 		end;
 
+		function Dropdown:IsValueSelected(Value)
+			if Info.Multi then
+				return Dropdown.Value[Value] == true;
+			end;
+
+			return Dropdown.Value == Value;
+		end;
+
+		local function CommitChange()
+			for _, Button in next, CurrentButtons do
+				Button:UpdateButton();
+			end;
+
+			Dropdown:Display();
+
+			Library:UpdateDependencyBoxes();
+			Library:SafeCallback(Dropdown.Callback, Dropdown.Value);
+			Library:SafeCallback(Dropdown.Changed, Dropdown.Value);
+
+			Library:AttemptSave();
+		end;
+
+		function Dropdown:SetMany(Values, Bool)
+			if not Info.Multi then
+				return;
+			end;
+
+			for _, Value in next, Values do
+				Dropdown.Value[Value] = Bool and true or nil;
+			end;
+
+			CommitChange();
+		end;
+
+		function Dropdown:SelectValue(Value)
+			local Try = not Dropdown:IsValueSelected(Value);
+
+			if Dropdown:GetActiveValues() == 1 and (not Try) and (not Info.AllowNull) then
+				return;
+			end;
+
+			if Info.Multi then
+				Dropdown.Value[Value] = Try or nil;
+			else
+				Dropdown.Value = Try and Value or nil;
+			end;
+
+			CommitChange();
+		end;
+
 		function Dropdown:BuildDropdownList()
 			local Values = Dropdown:GetDisplayValues();
 			local Buttons = {};
+			CurrentButtons = Buttons;
 
 			for _, Element in next, Scrolling:GetChildren() do
 				if not Element:IsA('UIListLayout') then
@@ -3238,7 +4160,7 @@ do
 					BackgroundColor3 = Library.MainColor;
 					BorderColor3 = Library.OutlineColor;
 					BorderMode = Enum.BorderMode.Middle;
-					Size = UDim2.new(1, -1, 0, 20);
+					Size = UDim2.new(1, -1, 0, ITEM_HEIGHT);
 					ZIndex = 23;
 					Active = true,
 					Parent = Scrolling;
@@ -3284,59 +4206,15 @@ do
 					Library.RegistryMap[ButtonLabel].Properties.TextColor3 = Selected and 'AccentColor' or 'FontColor';
 				end;
 
-				local isScrolling = false
-
-				Scrolling.InputBegan:Connect(function(input)
-					if input.UserInputType == Enum.UserInputType.Touch then
-						isScrolling = true
-					end
-				end)
-
-				Scrolling.InputEnded:Connect(function(input)
-					if input.UserInputType == Enum.UserInputType.Touch then
-						task.wait(.1)
-						isScrolling = false
-					end
-				end)
-
 				ButtonLabel.InputBegan:Connect(function(Input)
-					if isScrolling then return end
-					if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then
-						local Try = not Selected;
-
-						if Dropdown:GetActiveValues() == 1 and (not Try) and (not Info.AllowNull) then
-						else
-							if Info.Multi then
-								Selected = Try;
-
-								if Selected then
-									Dropdown.Value[Value] = true;
-								else
-									Dropdown.Value[Value] = nil;
-								end;
-							else
-								Selected = Try;
-
-								if Selected then
-									Dropdown.Value = Value;
-								else
-									Dropdown.Value = nil;
-								end;
-
-								for _, OtherButton in next, Buttons do
-									OtherButton:UpdateButton();
-								end;
+					if Input.UserInputType == Enum.UserInputType.MouseButton1 then
+						Dropdown:SelectValue(Value);
+					elseif Input.UserInputType == Enum.UserInputType.Touch then
+						TrackTap(Input, Scrolling, function()
+							if ListOuter.Visible then
+								Dropdown:SelectValue(Value);
 							end;
-
-							Table:UpdateButton();
-							Dropdown:Display();
-
-							Library:UpdateDependencyBoxes();
-							Library:SafeCallback(Dropdown.Callback, Dropdown.Value);
-							Library:SafeCallback(Dropdown.Changed, Dropdown.Value);
-
-							Library:AttemptSave();
-						end;
+						end);
 					end;
 				end);
 
@@ -3346,13 +4224,17 @@ do
 				Buttons[Button] = Table;
 			end;
 
-			Scrolling.CanvasSize = UDim2.fromOffset(0, (Count * 20) + 1);
+			Scrolling.CanvasSize = UDim2.fromOffset(0, (Count * ITEM_HEIGHT) + 1);
 
 			Scrolling.Visible = false;
 			Scrolling.Visible = true;
 
-			local Y = math.clamp(Count * 20, 0, MAX_DROPDOWN_ITEMS * 20) + 1 + SearchHeight;
+			local Y = math.clamp(Count * ITEM_HEIGHT, 0, MAX_DROPDOWN_ITEMS * ITEM_HEIGHT) + 1 + HeaderHeight;
 			RecalculateListSize(Y);
+
+			if MobilePicker.Owner == Dropdown then
+				MobilePicker:Refresh();
+			end;
 		end;
 
 		function Dropdown:SetValues(NewValues)
@@ -3364,6 +4246,14 @@ do
 		end;
 
 		function Dropdown:OpenDropdown()
+			if UsePicker then
+				DropdownArrow.Rotation = 180;
+				MobilePicker:Open(Dropdown, Info.Text or tostring(Idx), function()
+					DropdownArrow.Rotation = 0;
+				end);
+				return;
+			end;
+
 			if Library.IsMobile then
 				Library.CanDrag = false;
 			end;
@@ -3388,7 +4278,15 @@ do
 		end;
 
 		function Dropdown:CloseDropdown()
-			if Library.IsMobile then            
+			if MobilePicker.Owner == Dropdown then
+				MobilePicker:Close();
+			end;
+
+			if not ListOuter.Visible then
+				return;
+			end;
+
+			if Library.IsMobile then
 				Library.CanDrag = true;
 			end;
 
@@ -3432,17 +4330,27 @@ do
 			Library:SafeCallback(Dropdown.Changed, Dropdown.Value);
 		end;
 
+		local function ToggleList()
+			if ListOuter.Visible or MobilePicker.Owner == Dropdown then
+				Dropdown:CloseDropdown();
+			else
+				Dropdown:OpenDropdown();
+			end;
+		end;
+
 		DropdownOuter.InputBegan:Connect(function(Input)
-			if (Input.UserInputType == Enum.UserInputType.MouseButton1 and not Library:MouseIsOverOpenedFrame()) or Input.UserInputType == Enum.UserInputType.Touch then
-				if ListOuter.Visible then
-					Dropdown:CloseDropdown();
-				else
-					Dropdown:OpenDropdown();
-				end;
+			if Input.UserInputType == Enum.UserInputType.MouseButton1 and not Library:MouseIsOverOpenedFrame() then
+				ToggleList();
+			elseif Input.UserInputType == Enum.UserInputType.Touch then
+				TrackTap(Input, DropdownOuter:FindFirstAncestorWhichIsA('ScrollingFrame'), ToggleList);
 			end;
 		end);
 
 		InputService.InputBegan:Connect(function(Input)
+			if not ListOuter.Visible then
+				return;
+			end;
+
 			if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then
 				local AbsPos, AbsSize = ListOuter.AbsolutePosition, ListOuter.AbsoluteSize;
 
@@ -3759,6 +4667,9 @@ end;
 
 function Library:Notify(Text, Time, SoundId)
 	Text = tostring(Text);
+	if Text:lower():find('to hide', 1, true) then
+		Library.HideNotified = true;
+	end;
 	local DisplayText = escapeRich(Text);
 	if Library.NotifyTimestamps then
 		local Stamp = getTime();
@@ -4014,6 +4925,94 @@ local function LoadWatermarkPosition()
 	return false;
 end;
 
+local UISettingsFile = nil;
+local UISettings = { LockUI = false; SideHidden = false };
+
+local function ApplyUISettings()
+	Library.CantDragForced = UISettings.LockUI == true;
+	if Library.LockUILabel then
+		Library.LockUILabel.Text = Library.CantDragForced and 'Unlock UI' or 'Lock UI';
+	end;
+	if Library.ApplySideDock then
+		Library.ApplySideDock();
+	end;
+	if Library.MenuKeybindPicker and UISettings.MenuKeybind and Library.MenuKeybindPicker.Value ~= UISettings.MenuKeybind then
+		Library.MenuKeybindPicker:SetValue({ UISettings.MenuKeybind, Library.MenuKeybindPicker.Mode or 'Toggle' });
+	end;
+end;
+
+local function SaveUISettings()
+	if not UISettingsFile or not writefile then
+		return;
+	end;
+	local Folder = UISettingsFile:match('^(.*)/[^/]*$');
+	if Folder and isfolder and makefolder and not isfolder(Folder) then
+		pcall(makefolder, Folder);
+	end;
+	pcall(writefile, UISettingsFile, HttpService:JSONEncode(UISettings));
+end;
+
+function Library:SetUISettingsFile(Path)
+	UISettingsFile = Path;
+	if Path and isfile and readfile and isfile(Path) then
+		local Success, Data = pcall(function()
+			return HttpService:JSONDecode(readfile(Path));
+		end);
+		if Success and type(Data) == 'table' then
+			UISettings.LockUI = Data.LockUI == true;
+			UISettings.SideHidden = Data.SideHidden == true;
+			UISettings.MenuKeybind = type(Data.MenuKeybind) == 'string' and Data.MenuKeybind or nil;
+		end;
+	end;
+	ApplyUISettings();
+end;
+
+function Library:AddMenuKeybind(Groupbox, Info)
+	if Library.IsMobile then
+		return nil;
+	end;
+
+	Info = Info or {};
+
+	local Idx = Info.Idx or 'MenuKeybind';
+
+	Groupbox:AddLabel(Info.Text or 'Menu bind'):AddKeyPicker(Idx, {
+		Default = UISettings.MenuKeybind or Info.Default or 'RightControl';
+		NoUI = true;
+		Text = 'Menu keybind';
+	});
+
+	local Picker = Options[Idx];
+
+	Library.MenuKeybindPicker = Picker;
+	Library.ToggleKeybind = Picker;
+
+	Picker:OnChanged(function()
+		if type(Picker.Value) == 'string' and Picker.Value ~= UISettings.MenuKeybind then
+			UISettings.MenuKeybind = Picker.Value;
+			SaveUISettings();
+		end;
+	end);
+
+	return Picker;
+end;
+
+function Library:GetMenuKeybindText()
+	local Picker = type(Library.ToggleKeybind) == 'table' and Library.ToggleKeybind;
+
+	if Picker and type(Picker.Value) == 'string' and Picker.Value ~= 'None' and Picker.Value ~= 'Unknown' then
+		return Picker.Value;
+	end;
+
+	return 'RightCtrl or RightShift';
+end;
+
+function Library:SetUILocked(Bool)
+	UISettings.LockUI = not not Bool;
+	ApplyUISettings();
+	SaveUISettings();
+end;
+
 function Library:SetWatermarkSaveFile(Path)
 	WatermarkFile = Path;
 	return LoadWatermarkPosition();
@@ -4085,6 +5084,32 @@ function Library:SetFont(Font)
 	return true;
 end;
 
+local TabFile = nil;
+local PendingTab = nil;
+
+function Library:SetTabSaveFile(Path)
+	TabFile = Path;
+	PendingTab = nil;
+
+	if not (Path and isfile and readfile and isfile(Path)) then
+		return;
+	end;
+
+	local Success, Name = pcall(readfile, Path);
+
+	if not Success or type(Name) ~= 'string' or Name == '' then
+		return;
+	end;
+
+	local Tab = Library.RememberTab and Library.Window and Library.Window.Tabs[Name];
+
+	if Tab then
+		Tab:ShowTab();
+	else
+		PendingTab = Name;
+	end;
+end;
+
 function Library:CreateWindow(...)
 	local Arguments = { ... }
 	local Config = { AnchorPoint = Vector2.zero }
@@ -4107,6 +5132,10 @@ function Library:CreateWindow(...)
 		if Library.IsMobile then
 			Config.Size = UDim2.fromOffset(550, 400)
 		end
+	end
+
+	if Config.RememberTab ~= nil then
+		Library.RememberTab = Config.RememberTab == true
 	end
 
 	if Config.TabPadding <= 0 then
@@ -4383,6 +5412,11 @@ function Library:CreateWindow(...)
 
 		function Tab:ShowTab()
 			Library.ActiveTab = Name;
+
+			if Library.RememberTab and TabFile and writefile then
+				pcall(writefile, TabFile, Name);
+			end;
+
 			for _, Tab in next, Window.Tabs do
 				Tab:HideTab();
 			end;
@@ -4671,9 +5705,14 @@ function Library:CreateWindow(...)
 				end;
 
 				Button.InputBegan:Connect(function(Input)
-					if (Input.UserInputType == Enum.UserInputType.MouseButton1 and not Library:MouseIsOverOpenedFrame()) or Input.UserInputType == Enum.UserInputType.Touch then
+					if Input.UserInputType == Enum.UserInputType.MouseButton1 and not Library:MouseIsOverOpenedFrame() then
 						Tab:Show();
 						Tab:Resize();
+					elseif Input.UserInputType == Enum.UserInputType.Touch then
+						TrackTap(Input, Button:FindFirstAncestorWhichIsA('ScrollingFrame'), function()
+							Tab:Show();
+							Tab:Resize();
+						end);
 					end;
 				end);
 
@@ -4706,8 +5745,12 @@ function Library:CreateWindow(...)
 		end;
 
 		TabButton.InputBegan:Connect(function(Input)
-			if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then
+			if Input.UserInputType == Enum.UserInputType.MouseButton1 then
 				Tab:ShowTab();
+			elseif Input.UserInputType == Enum.UserInputType.Touch then
+				TrackTap(Input, TabArea, function()
+					Tab:ShowTab();
+				end);
 			end;
 		end);
 
@@ -4717,6 +5760,12 @@ function Library:CreateWindow(...)
 		end;
 
 		Window.Tabs[Name] = Tab;
+
+		if Library.RememberTab and PendingTab == Name then
+			PendingTab = nil;
+			Tab:ShowTab();
+		end;
+
 		return Tab;
 	end;
 
@@ -4839,48 +5888,65 @@ function Library:CreateWindow(...)
 	end));
 
 	if Library.IsMobile then
-		local function createButton(text, position, callback)
-			local buttonOuter = Library:Create('Frame', {
+		local Dock = Library:Create('Frame', {
+			AutomaticSize = Enum.AutomaticSize.XY;
+			BackgroundTransparency = 1;
+			Position = UDim2.fromScale(0.008, 0.45);
+			Size = UDim2.fromOffset(0, 0);
+			ZIndex = 200;
+			Parent = ScreenGui;
+		});
+
+		Library:Create('UIListLayout', {
+			FillDirection = Enum.FillDirection.Vertical;
+			Padding = UDim.new(0, 8);
+			SortOrder = Enum.SortOrder.LayoutOrder;
+			Parent = Dock;
+		});
+
+		local function CreateDockButton(Text, Order, Height)
+			local ButtonOuter = Library:Create('Frame', {
+				BackgroundColor3 = Color3.new(0, 0, 0);
 				BorderColor3 = Color3.new(0, 0, 0);
-				Position = position;
-				Size = UDim2.new(0, 77, 0, 30);
+				LayoutOrder = Order;
+				Size = UDim2.fromOffset(100, Height);
 				ZIndex = 200;
-				Visible = true;
-				Parent = ScreenGui;
+				Parent = Dock;
 			});
 
-			local buttonInner = Library:Create('Frame', {
+			local ButtonInner = Library:Create('Frame', {
 				BackgroundColor3 = Library.MainColor;
 				BorderColor3 = Library.AccentColor;
 				BorderMode = Enum.BorderMode.Inset;
 				Size = UDim2.new(1, 0, 1, 0);
 				ZIndex = 201;
-				Parent = buttonOuter;
+				Parent = ButtonOuter;
 			});
 
-			Library:AddToRegistry(buttonInner, {
+			Library:AddToRegistry(ButtonInner, {
+				BackgroundColor3 = 'MainColor';
 				BorderColor3 = 'AccentColor';
 			});
 
-			local buttonInnerFrame = Library:Create('Frame', {
+			local ButtonFill = Library:Create('Frame', {
 				BackgroundColor3 = Color3.new(1, 1, 1);
 				BorderSizePixel = 0;
 				Position = UDim2.new(0, 1, 0, 1);
 				Size = UDim2.new(1, -2, 1, -2);
 				ZIndex = 202;
-				Parent = buttonInner;
+				Parent = ButtonInner;
 			});
 
-			local buttonGradient = Library:Create('UIGradient', {
+			local Gradient = Library:Create('UIGradient', {
 				Color = ColorSequence.new({
 					ColorSequenceKeypoint.new(0, Library:GetDarkerColor(Library.MainColor)),
 					ColorSequenceKeypoint.new(1, Library.MainColor),
 				});
 				Rotation = -90;
-				Parent = buttonInnerFrame;
+				Parent = ButtonFill;
 			});
 
-			Library:AddToRegistry(buttonGradient, {
+			Library:AddToRegistry(Gradient, {
 				Color = function()
 					return ColorSequence.new({
 						ColorSequenceKeypoint.new(0, Library:GetDarkerColor(Library.MainColor)),
@@ -4889,87 +5955,198 @@ function Library:CreateWindow(...)
 				end
 			});
 
-			local button = Library:Create('TextButton', {
-				Position = UDim2.new(0, 5, 0, 0);
-				Size = UDim2.new(1, -4, 1, 0);
+			local Button = Library:Create('TextButton', {
+				AutoButtonColor = false;
 				BackgroundTransparency = 1;
 				Font = Library.Font;
-				Text = text;
+				Size = UDim2.new(1, 0, 1, 0);
+				Text = Text;
 				TextColor3 = Library.FontColor;
-				TextSize = 14;
-				TextXAlignment = Enum.TextXAlignment.Left;
+				TextSize = 15;
 				TextStrokeTransparency = 0;
 				ZIndex = 203;
-				Parent = buttonInnerFrame;
+				Parent = ButtonFill;
 			});
 
-			button.MouseButton1Down:Connect(callback)
-			return buttonOuter
-		end
+			Library:AddToRegistry(Button, {
+				TextColor3 = 'FontColor';
+			});
 
-		local ToggleUIOuter
-		local LockUIOuter
-		local ScrollUpButton
-		local ScrollDownButton
-		local ToggleSideButton
-		local ToggleSideTextButton
+			return ButtonOuter, Button, ButtonInner, ButtonFill;
+		end;
 
-		local sideButtonsVisible = true
+		local GripOuter, GripButton, GripInner, GripFill = CreateDockButton('Hide', 1, 26);
+		local ToggleUIOuter, ToggleUIButton = CreateDockButton('Toggle UI', 2, 38);
+		local LockUIOuter, LockUIButton = CreateDockButton(Library.CantDragForced and 'Unlock UI' or 'Lock UI', 3, 38);
 
-		local function toggleSideButtons()
-			sideButtonsVisible = not sideButtonsVisible
-			ToggleUIOuter.Visible = sideButtonsVisible
-			LockUIOuter.Visible = sideButtonsVisible
-			ScrollUpButton.Visible = sideButtonsVisible
-			ScrollDownButton.Visible = sideButtonsVisible
+		Library.LockUILabel = LockUIButton;
 
-			if ToggleSideTextButton then
-				ToggleSideTextButton.Text = sideButtonsVisible and 'Hide' or 'Show'
-			end
-		end
+		ToggleUIButton.MouseButton1Click:Connect(function()
+			task.spawn(Library.Toggle);
+		end);
 
-		ToggleSideButton = createButton('Hide', UDim2.new(0.008, 0, 0.58, 0), function()
-			task.spawn(toggleSideButtons)
-		end)
+		LockUIButton.MouseButton1Click:Connect(function()
+			Library:SetUILocked(not Library.CantDragForced);
+			Library:Notify(Library.CantDragForced and 'Locked UI' or 'Unlocked UI', 2);
+		end);
 
-		ToggleSideTextButton = ToggleSideButton:FindFirstChildWhichIsA('TextButton', true)
+		local function ClampDock(X, Y)
+			local Screen = ScreenGui.AbsoluteSize;
+			local Size = Dock.AbsoluteSize;
 
-		if ToggleSideTextButton then
-			ToggleSideTextButton.Text = 'Hide' 
-		end
+			return math.clamp(X, 0, math.max(0, Screen.X - Size.X)), math.clamp(Y, 0, math.max(0, Screen.Y - Size.Y));
+		end;
 
-		ToggleUIOuter = createButton('Toggle UI', Library.IsMobile and UDim2.new(0.008, 0, 0.65, 0) or UDim2.new(0.008, 0, 0.701, 0), function()
-			task.spawn(Library.Toggle)
-		end)
+		local function PlaceDock(X, Y)
+			X, Y = ClampDock(X, Y);
 
-		LockUIOuter = createButton('Lock UI', Library.IsMobile and UDim2.new(0.008, 0, 0.72, 0) or UDim2.new(0.008, 0, 0.758, 0), function()
-			Library.CantDragForced = not Library.CantDragForced
-			Library:Notify(Library.CantDragForced and 'Locked UI' or 'Unlocked UI', 2)
-		end)
+			local Screen = ScreenGui.AbsoluteSize;
 
-		local function scrollUI(amount)
-			local Sides = {}
-			if Library.Window then
-				Sides = Library.Window.Tabs[Library.ActiveTab]:GetSides()
-			end
-			for _, Side in pairs(Sides) do
-				if typeof(Side) == 'Instance' and Side:IsA('ScrollingFrame') then
-					Side.CanvasPosition = Side.CanvasPosition + Vector2.new(0, amount)
-				end
-			end
-		end
+			if Screen.X > 0 and Screen.Y > 0 then
+				Dock.Position = UDim2.fromScale(X / Screen.X, Y / Screen.Y);
+			else
+				Dock.Position = UDim2.fromOffset(X, Y);
+			end;
+		end;
 
-		ScrollUpButton = createButton('▲', Library.IsMobile and UDim2.new(0.008, 0, 0.79, 0) or UDim2.new(0.008, 0, 0.815, 0), function()
-			scrollUI(-50)
-		end)
+		local function KeepDockOnScreen()
+			task.defer(function()
+				local Position = Dock.AbsolutePosition;
+				PlaceDock(Position.X, Position.Y);
+			end);
+		end;
 
-		ScrollDownButton = createButton('▼', Library.IsMobile and UDim2.new(0.008, 0, 0.86, 0) or UDim2.new(0.008, 0, 0.872, 0), function()
-			scrollUI(50)
-		end)
+		local function SetDockHidden(Hidden, Save)
+			ToggleUIOuter.Visible = not Hidden;
+			LockUIOuter.Visible = not Hidden;
 
+			GripOuter.Size = Hidden and UDim2.fromOffset(30, 30) or UDim2.fromOffset(100, 26);
+			GripButton.Text = Hidden and '+' or 'Hide';
+			GripButton.TextTransparency = Hidden and 0.35 or 0;
+			GripInner.BackgroundTransparency = Hidden and 0.5 or 0;
+			GripFill.BackgroundTransparency = Hidden and 0.5 or 0;
+			GripOuter.BackgroundTransparency = Hidden and 0.5 or 0;
+
+			if Save then
+				UISettings.SideHidden = Hidden;
+				SaveUISettings();
+			end;
+
+			KeepDockOnScreen();
+		end;
+
+		function Library.ApplySideDock()
+			SetDockHidden(UISettings.SideHidden == true, false);
+		end;
+
+		local function GetPointer(Input)
+			if Input.UserInputType == Enum.UserInputType.Touch then
+				return Vector2.new(Input.Position.X, Input.Position.Y);
+			end;
+
+			return Vector2.new(Mouse.X, Mouse.Y);
+		end;
+
+		local function IsPointerDown(Input)
+			if Input.UserInputType == Enum.UserInputType.Touch then
+				return Input.UserInputState ~= Enum.UserInputState.End and Input.UserInputState ~= Enum.UserInputState.Cancel;
+			end;
+
+			return InputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1);
+		end;
+
+		GripButton.InputBegan:Connect(function(Input)
+			if Input.UserInputType ~= Enum.UserInputType.Touch and Input.UserInputType ~= Enum.UserInputType.MouseButton1 then
+				return;
+			end;
+
+			local Start = GetPointer(Input);
+			local DockStart = Dock.AbsolutePosition;
+			local Moved = false;
+
+			while IsPointerDown(Input) do
+				local Delta = GetPointer(Input) - Start;
+
+				if not Moved and Delta.Magnitude > 8 then
+					Moved = true;
+					Library.CanDrag = false;
+				end;
+
+				if Moved then
+					local X, Y = ClampDock(DockStart.X + Delta.X, DockStart.Y + Delta.Y);
+					Dock.Position = UDim2.fromOffset(X, Y);
+				end;
+
+				RenderStepped:Wait();
+			end;
+
+			if Moved then
+				local Position = Dock.AbsolutePosition;
+				PlaceDock(Position.X, Position.Y);
+
+				if not Library.PickerOpen then
+					Library.CanDrag = true;
+				end;
+			else
+				SetDockHidden(ToggleUIOuter.Visible, true);
+			end;
+		end);
+
+		ScreenGui:GetPropertyChangedSignal('AbsoluteSize'):Connect(KeepDockOnScreen);
+
+		Library.ApplySideDock();
 	end
 
 	if Config.AutoShow then task.spawn(Library.Toggle) end
+
+	if Library.IsMobile then
+		local BaseSize = nil;
+
+		local function FitWindow()
+			local Screen = ScreenGui.AbsoluteSize;
+
+			if Screen.X <= 0 or Screen.Y <= 0 then
+				return;
+			end;
+
+			local Base = BaseSize or Outer.AbsoluteSize;
+			BaseSize = Base;
+
+			local OldWidth, OldHeight = Outer.AbsoluteSize.X, Outer.AbsoluteSize.Y;
+			local Width = math.min(Base.X, Screen.X - 16);
+			local Height = math.min(Base.Y, Screen.Y - 16);
+			local Anchor = Outer.AnchorPoint;
+			local Position = Outer.Position;
+
+			local Left = Position.X.Scale * Screen.X + Position.X.Offset - Anchor.X * OldWidth;
+			local Top = Position.Y.Scale * Screen.Y + Position.Y.Offset - Anchor.Y * OldHeight;
+
+			Left = math.clamp(Left, 8, math.max(8, Screen.X - Width - 8));
+			Top = math.clamp(Top, 8, math.max(8, Screen.Y - Height - 8));
+
+			Outer.Size = UDim2.fromOffset(Width, Height);
+			Outer.Position = UDim2.fromOffset(Left + Anchor.X * Width, Top + Anchor.Y * Height);
+		end;
+
+		task.defer(FitWindow);
+		Library:GiveSignal(ScreenGui:GetPropertyChangedSignal('AbsoluteSize'):Connect(FitWindow));
+	end;
+
+	if not Library.IsMobile and Config.KeybindNotify ~= false then
+		Library:Spawn(function()
+			local Started = os.clock();
+
+			while not UISettingsFile and os.clock() - Started < 3 do
+				task.wait(0.1);
+			end;
+
+			task.wait(1);
+
+			if not Library.Unloaded and not Library.HideNotified then
+				Library:Notify(('Press %s to hide the menu'):format(Library:GetMenuKeybindText()), 10);
+			end;
+		end);
+	end;
 
 	Window.Holder = Outer;
 
