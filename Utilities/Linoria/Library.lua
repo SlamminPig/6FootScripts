@@ -443,6 +443,12 @@ function Library:AddToolTip(InfoStr, HoverInstance)
 		TextColor3 = 'FontColor',
 	});
 
+	local function FitToFont()
+		local FitX, FitY = Library:GetTextBounds(Label.Text, Label.Font, 14);
+		Tooltip.Size = UDim2.fromOffset(FitX + 5, FitY + 4);
+		Label.Size = UDim2.fromOffset(FitX, FitY);
+	end;
+
 	local IsHovering = false
 	local TouchShown = false
 
@@ -458,6 +464,7 @@ function Library:AddToolTip(InfoStr, HoverInstance)
 		IsHovering = true
 
 		Tooltip.Position = UDim2.fromOffset(Mouse.X + 15, Mouse.Y + 12)
+		FitToFont();
 		Tooltip.Visible = true
 
 		while IsHovering do
@@ -486,6 +493,7 @@ function Library:AddToolTip(InfoStr, HoverInstance)
 	end
 
 	local function ShowTouchTooltip()
+		FitToFont();
 		local Screen = Library.ScreenGui.AbsoluteSize
 		local Position, Size = HoverInstance.AbsolutePosition, HoverInstance.AbsoluteSize
 		local Width, Height = Tooltip.AbsoluteSize.X, Tooltip.AbsoluteSize.Y
