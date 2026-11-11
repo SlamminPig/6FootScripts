@@ -5657,6 +5657,14 @@ function Library:CreateWindow(...)
 			TabListLayout:ApplyLayout();
 		end;
 
+		function Tab:SetVisible(Visible)
+			TabButton.Visible = Visible == true;
+			if not TabButton.Visible and Library.ActiveTab == Name then
+				Tab:HideTab();
+			end;
+			TabListLayout:ApplyLayout();
+		end;
+
 		function Tab:GetSides()
 			return { ["Left"] = LeftSide, ["Right"] = RightSide };
 		end;
