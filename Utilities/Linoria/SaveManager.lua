@@ -1,8 +1,11 @@
-local httpService = game:GetService('HttpService')
+local cloneref = cloneref or function(c) return c end
+local Service = setmetatable({}, {__index = function(_, x) return cloneref(game:GetService(x)) end})
+local httpService = Service.HttpService
 
 local SaveManager = {} do
 	SaveManager.Folder = 'LinoriaLibSettings'
 	SaveManager.Ignore = {}
+	SaveManager.AllowedGameIds = {}
 	SaveManager.Parser = {
 		Toggle = {
 			Save = function(idx, object) 
@@ -50,7 +53,9 @@ local SaveManager = {} do
 			end,
 			Load = function(idx, data)
 				if Options[idx] then 
-					Options[idx]:SetValue({ data.key, data.mode })
+					if type(data.key) == 'string' then
+						Options[idx]:SetValue({ data.key, data.mode })
+					end
 				end
 			end,
 		},
@@ -70,6 +75,12 @@ local SaveManager = {} do
 	function SaveManager:SetIgnoreIndexes(list)
 		for _, key in next, list do
 			self.Ignore[key] = true
+		end
+	end
+
+	function SaveManager:SetAllowedGameIds(list)
+		for _, id in next, list do
+			self.AllowedGameIds[id] = true
 		end
 	end
 
@@ -139,14 +150,24 @@ local SaveManager = {} do
 			return false, 'decode error'
 		end
 
-		if decoded.game ~= nil and decoded.game ~= game.GameId then
+		if decoded.game ~= nil and decoded.game ~= game.GameId and not self.AllowedGameIds[decoded.game] then
 			return false, 'config is for a different game'
 		end
 
+		local toggles = {}
+
 		for _, option in next, decoded.objects do
 			if type(option) == 'table' and self.Parser[option.type] and not self.Ignore[option.idx] then
-				task.spawn(function() self.Parser[option.type].Load(option.idx, option) end)
+				if option.type == 'Toggle' then
+					table.insert(toggles, option)
+				else
+					task.spawn(function() self.Parser[option.type].Load(option.idx, option) end)
+				end
 			end
+		end
+
+		for _, option in ipairs(toggles) do
+			task.spawn(function() self.Parser[option.type].Load(option.idx, option) end)
 		end
 
 		return true
@@ -157,7 +178,11 @@ local SaveManager = {} do
 			return false, 'no config file is selected'
 		end
 
-		name = name:gsub('[\\/:*?"<>|]', '')
+		name = tostring(name):gsub('[\\/:*?"<>|]', '')
+		if name:gsub(' ', '') == '' then
+			return false, 'invalid config name'
+		end
+
 		local fullPath = self.Folder .. '/settings/' .. name .. '.json'
 
 		local encoded, err = self:Export()
@@ -165,7 +190,11 @@ local SaveManager = {} do
 			return false, err
 		end
 
-		writefile(fullPath, encoded)
+		local success = pcall(writefile, fullPath, encoded)
+		if not success then
+			return false, 'write file error'
+		end
+
 		return true
 	end
 
@@ -223,7 +252,7 @@ local SaveManager = {} do
 
 		for i = 1, #list do
 			local name = list[i]:match('([^\\/]+)%.json$')
-			if name then
+			if name and not (name == 'LinoriaUI' and not self.Folder:find('/', 1, true)) then
 				table.insert(out, name)
 			end
 		end
@@ -273,8 +302,10 @@ local SaveManager = {} do
 
 			self.Library:Notify(string.format('Created config %q', name))
 
+			local saved = name:gsub('[\\/:*?"<>|]', '')
+
 			Options.SaveManager_ConfigList:SetValues(self:RefreshConfigList())
-			Options.SaveManager_ConfigList:SetValue(nil)
+			Options.SaveManager_ConfigList:SetValue(saved)
 		end)
 
 		section:AddDivider()
@@ -330,7 +361,8 @@ local SaveManager = {} do
 			self.Library:Notify(string.format('Set %q to auto load', name))
 		end)
 		section:AddButton('Reset autoload', function()
-			local success = pcall(delfile, self.Folder .. '/settings/autoload.txt')
+			local path = self.Folder .. '/settings/autoload.txt'
+			local success = not isfile(path) or pcall(delfile, path)
 			if not success then 
 				return self.Library:Notify('Failed to reset autoload: delete file error')
 			end
