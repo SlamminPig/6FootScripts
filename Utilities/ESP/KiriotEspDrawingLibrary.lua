@@ -4,12 +4,16 @@ local cloneref = cloneref or function(c) return c end
 local Service = setmetatable({}, {__index = function(_, x) return cloneref(game:GetService(x)) end})
 
 local LocalPlayer = Service.Players.LocalPlayer
+while not LocalPlayer do
+	Service.Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
+	LocalPlayer = Service.Players.LocalPlayer
+end
 
 local Vector2new = Vector2.new
 local Vector3new = Vector3.new
 local CFramenew = CFrame.new
 local mathfloor, mathmin, mathmax, mathclamp, mathtan, mathrad = math.floor, math.min, math.max, math.clamp, math.tan, math.rad
-local WTVP = workspace.CurrentCamera.WorldToViewportPoint
+local WTVP = Instance.new("Camera").WorldToViewportPoint
 
 local Black = Color3.new(0, 0, 0)
 local HealthLow = Color3.fromRGB(255, 60, 60)
@@ -61,12 +65,56 @@ local ESP = {
 	PlayerConnections = {},
 }
 
+local Definitions = {
+	BoxOutline = {"Square", {Color = Black, Thickness = 3, Filled = false, Transparency = 1, Visible = false, ZIndex = 1}},
+	Box = {"Square", {Thickness = 1, Filled = false, Transparency = 1, Visible = false, ZIndex = 2}},
+	QuadOutline = {"Quad", {Color = Black, Thickness = 3, Filled = false, Transparency = 1, Visible = false, ZIndex = 1}},
+	Quad = {"Quad", {Thickness = 1, Filled = false, Transparency = 1, Visible = false, ZIndex = 2}},
+	HealthOutline = {"Square", {Color = Black, Filled = true, Transparency = 1, Visible = false, ZIndex = 1}},
+	HealthBar = {"Square", {Filled = true, Transparency = 1, Visible = false, ZIndex = 2}},
+	Name = {"Text", {Center = true, Outline = true, Transparency = 1, Visible = false, ZIndex = 3}},
+	Distance = {"Text", {Center = true, Outline = true, Transparency = 1, Visible = false, ZIndex = 3}},
+	Tracer = {"Line", {Thickness = 1, Transparency = 1, Visible = false, ZIndex = 2}},
+}
+
 local function Draw(class, props)
 	local obj = Drawing.new(class)
 	for k, v in pairs(props) do
 		obj[k] = v
 	end
 	return obj
+end
+
+local function NewComponents(state)
+	return setmetatable({}, {__index = function(t, name)
+		local def = Definitions[name]
+		if not def then
+			return nil
+		end
+		local obj = Draw(def[1], def[2])
+		state[name] = {Visible = false}
+		rawset(t, name, obj)
+		return obj
+	end})
+end
+
+local function Get(box, name)
+	local obj = box.Components[name]
+	return obj, box.State[name]
+end
+
+local function Set(obj, state, prop, value)
+	if state[prop] ~= value then
+		obj[prop] = value
+		state[prop] = value
+	end
+end
+
+local function Off(box, name)
+	local obj = rawget(box.Components, name)
+	if obj then
+		Set(obj, box.State[name], "Visible", false)
+	end
 end
 
 local function Connect(list, signal, fn)
@@ -107,6 +155,8 @@ function ESP:GetColor(obj)
 	local p = self:GetPlrFromChar(obj)
 	return p and self.TeamColor and p.Team and p.Team.TeamColor.Color or self.Color
 end
+
+local DefaultGetColor = ESP.GetColor
 
 function ESP:GetHealth(box)
 	local ov = self.Overrides.GetHealth
@@ -150,11 +200,14 @@ function Box:Hide()
 		return
 	end
 	self.Hidden = true
-	for _, d in pairs(self.Components) do
+	local state = self.State
+	for name, d in pairs(self.Components) do
 		d.Visible = false
+		state[name].Visible = false
 	end
 	if self.Highlight then
 		self.Highlight.Enabled = false
+		self.ChamsOn = false
 	end
 end
 
@@ -170,6 +223,7 @@ function Box:Remove()
 		conn:Disconnect()
 	end
 	table.clear(self.Connections)
+	setmetatable(self.Components, nil)
 	for _, d in pairs(self.Components) do
 		pcall(function()
 			d.Visible = false
@@ -187,7 +241,26 @@ function Box:GetColor()
 	if ESP.Highlighted == self.Object then
 		return ESP.HighlightColor
 	end
-	return self.Color or (self.ColorDynamic and self:ColorDynamic()) or ESP:GetColor(self.Object) or ESP.Color
+	if self.Color then
+		return self.Color
+	end
+	if self.ColorDynamic then
+		local dynamic = self:ColorDynamic()
+		if dynamic then
+			return dynamic
+		end
+	end
+	if ESP.GetColor ~= DefaultGetColor or ESP.Overrides.GetColor or ESP.Overrides.GetPlrFromChar then
+		return ESP:GetColor(self.Object) or ESP.Color
+	end
+	local p = self.Player
+	if p and ESP.TeamColor then
+		local team = p.Team
+		if team then
+			return team.TeamColor.Color
+		end
+	end
+	return ESP.Color
 end
 
 function Box:IsAllowed()
@@ -221,8 +294,9 @@ end
 function Box:UpdateChams(color)
 	local hl = self.Highlight
 	if not ESP.Chams then
-		if hl then
+		if hl and self.ChamsOn then
 			hl.Enabled = false
+			self.ChamsOn = false
 		end
 		return
 	end
@@ -234,17 +308,35 @@ function Box:UpdateChams(color)
 		hl = Instance.new("Highlight")
 		hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
 		hl.Adornee = obj
+		hl.Enabled = false
 		hl.Parent = HighlightParent
 		self.Highlight = hl
+		self.ChamsOn = false
 	end
-	hl.FillColor = color
-	hl.OutlineColor = color
-	hl.FillTransparency = ESP.ChamsFillTransparency
-	hl.OutlineTransparency = ESP.ChamsOutlineTransparency
-	hl.Enabled = true
+	if self.ChamsColor ~= color then
+		self.ChamsColor = color
+		hl.FillColor = color
+		hl.OutlineColor = color
+	end
+	local fill, outline = ESP.ChamsFillTransparency, ESP.ChamsOutlineTransparency
+	if self.ChamsFill ~= fill then
+		self.ChamsFill = fill
+		hl.FillTransparency = fill
+	end
+	if self.ChamsOutline ~= outline then
+		self.ChamsOutline = outline
+		hl.OutlineTransparency = outline
+	end
+	if not self.ChamsOn then
+		self.ChamsOn = true
+		hl.Enabled = true
+	end
 end
 
 function Box:Update(cam, viewport, tanHalfFov, origin)
+	if self.Removed then
+		return
+	end
 	local part = self.PrimaryPart
 	if not part then
 		return self:Remove()
@@ -296,7 +388,8 @@ function Box:Update(cam, viewport, tanHalfFov, origin)
 		return self:Hide()
 	end
 
-	local comp = self.Components
+	self.Hidden = false
+
 	local color = self:GetColor()
 	local thickness = ESP.Thickness
 	local centerX = (minX + maxX) / 2
@@ -304,73 +397,86 @@ function Box:Update(cam, viewport, tanHalfFov, origin)
 	self:UpdateChams(color)
 
 	if ESP.Boxes and isQuad then
-		local q, qo = comp.Quad, comp.QuadOutline
-		q.PointA, q.PointB, q.PointC, q.PointD = pA, pB, pC, pD
-		q.Color = color
-		q.Thickness = thickness
-		q.Visible = true
+		local q, qs = Get(self, "Quad")
+		Set(q, qs, "PointA", pA)
+		Set(q, qs, "PointB", pB)
+		Set(q, qs, "PointC", pC)
+		Set(q, qs, "PointD", pD)
+		Set(q, qs, "Color", color)
+		Set(q, qs, "Thickness", thickness)
+		Set(q, qs, "Visible", true)
 		if ESP.BoxOutline then
-			qo.PointA, qo.PointB, qo.PointC, qo.PointD = pA, pB, pC, pD
-			qo.Thickness = thickness + 2
-			qo.Visible = true
+			local qo, qos = Get(self, "QuadOutline")
+			Set(qo, qos, "PointA", pA)
+			Set(qo, qos, "PointB", pB)
+			Set(qo, qos, "PointC", pC)
+			Set(qo, qos, "PointD", pD)
+			Set(qo, qos, "Thickness", thickness + 2)
+			Set(qo, qos, "Visible", true)
 		else
-			qo.Visible = false
+			Off(self, "QuadOutline")
 		end
-		comp.Box.Visible = false
-		comp.BoxOutline.Visible = false
+		Off(self, "Box")
+		Off(self, "BoxOutline")
 	elseif ESP.Boxes then
 		local pos = Vector2new(minX, minY)
 		local sz = Vector2new(maxX - minX, maxY - minY)
-		local bx, bo = comp.Box, comp.BoxOutline
-		bx.Position = pos
-		bx.Size = sz
-		bx.Color = color
-		bx.Thickness = thickness
-		bx.Visible = true
+		local bx, bs = Get(self, "Box")
+		Set(bx, bs, "Position", pos)
+		Set(bx, bs, "Size", sz)
+		Set(bx, bs, "Color", color)
+		Set(bx, bs, "Thickness", thickness)
+		Set(bx, bs, "Visible", true)
 		if ESP.BoxOutline then
-			bo.Position = pos
-			bo.Size = sz
-			bo.Thickness = thickness + 2
-			bo.Visible = true
+			local bo, bos = Get(self, "BoxOutline")
+			Set(bo, bos, "Position", pos)
+			Set(bo, bos, "Size", sz)
+			Set(bo, bos, "Thickness", thickness + 2)
+			Set(bo, bos, "Visible", true)
 		else
-			bo.Visible = false
+			Off(self, "BoxOutline")
 		end
-		comp.Quad.Visible = false
-		comp.QuadOutline.Visible = false
+		Off(self, "Quad")
+		Off(self, "QuadOutline")
 	else
-		comp.Box.Visible = false
-		comp.BoxOutline.Visible = false
-		comp.Quad.Visible = false
-		comp.QuadOutline.Visible = false
+		Off(self, "Box")
+		Off(self, "BoxOutline")
+		Off(self, "Quad")
+		Off(self, "QuadOutline")
 	end
 
 	local textSize, font = ESP.TextSize, ESP.Font
 
-	local name = comp.Name
 	if ESP.Names then
-		name.Text = self.Name
-		name.Size = textSize
-		name.Font = font
-		name.Color = color
-		name.Position = Vector2new(centerX, minY - textSize - 3)
-		name.Visible = true
+		local name, ns = Get(self, "Name")
+		Set(name, ns, "Text", self.Name)
+		Set(name, ns, "Size", textSize)
+		Set(name, ns, "Font", font)
+		Set(name, ns, "Color", color)
+		Set(name, ns, "Position", Vector2new(centerX, minY - textSize - 3))
+		Set(name, ns, "Visible", true)
 	else
-		name.Visible = false
+		Off(self, "Name")
 	end
 
-	local dist = comp.Distance
 	if ESP.Distance then
-		dist.Text = string.format(ESP.DistanceFormat, mathfloor(distance))
-		dist.Size = textSize
-		dist.Font = font
-		dist.Color = color
-		dist.Position = Vector2new(centerX, maxY + 2)
-		dist.Visible = true
+		local dist, ds = Get(self, "Distance")
+		local whole, format = mathfloor(distance), ESP.DistanceFormat
+		if self.DistanceValue ~= whole or self.DistanceFormat ~= format then
+			self.DistanceValue = whole
+			self.DistanceFormat = format
+			self.DistanceText = string.format(format, whole)
+		end
+		Set(dist, ds, "Text", self.DistanceText)
+		Set(dist, ds, "Size", textSize)
+		Set(dist, ds, "Font", font)
+		Set(dist, ds, "Color", color)
+		Set(dist, ds, "Position", Vector2new(centerX, maxY + 2))
+		Set(dist, ds, "Visible", true)
 	else
-		dist.Visible = false
+		Off(self, "Distance")
 	end
 
-	local hb, ho = comp.HealthBar, comp.HealthOutline
 	local health, maxHealth
 	if ESP.HealthBars then
 		health, maxHealth = ESP:GetHealth(self)
@@ -378,33 +484,36 @@ function Box:Update(cam, viewport, tanHalfFov, origin)
 	if health and maxHealth and maxHealth > 0 then
 		local pct = mathclamp(health / maxHealth, 0, 1)
 		local barHeight = maxY - minY
-		ho.Position = Vector2new(minX - 6, minY - 1)
-		ho.Size = Vector2new(4, barHeight + 2)
-		ho.Visible = true
-		hb.Position = Vector2new(minX - 5, minY + barHeight * (1 - pct))
-		hb.Size = Vector2new(2, barHeight * pct)
-		hb.Color = HealthLow:Lerp(HealthHigh, pct)
-		hb.Visible = true
+		local ho, hos = Get(self, "HealthOutline")
+		local hb, hbs = Get(self, "HealthBar")
+		Set(ho, hos, "Position", Vector2new(minX - 6, minY - 1))
+		Set(ho, hos, "Size", Vector2new(4, barHeight + 2))
+		Set(ho, hos, "Visible", true)
+		Set(hb, hbs, "Position", Vector2new(minX - 5, minY + barHeight * (1 - pct)))
+		Set(hb, hbs, "Size", Vector2new(2, barHeight * pct))
+		Set(hb, hbs, "Color", HealthLow:Lerp(HealthHigh, pct))
+		Set(hb, hbs, "Visible", true)
 	else
-		hb.Visible = false
-		ho.Visible = false
+		Off(self, "HealthBar")
+		Off(self, "HealthOutline")
 	end
 
-	local tracer = comp.Tracer
 	if ESP.Tracers then
-		tracer.From = origin
-		tracer.To = Vector2new(centerX, maxY)
-		tracer.Color = color
-		tracer.Thickness = thickness
-		tracer.Visible = true
+		local tracer, ts = Get(self, "Tracer")
+		Set(tracer, ts, "From", origin)
+		Set(tracer, ts, "To", Vector2new(centerX, maxY))
+		Set(tracer, ts, "Color", color)
+		Set(tracer, ts, "Thickness", thickness)
+		Set(tracer, ts, "Visible", true)
 	else
-		tracer.Visible = false
+		Off(self, "Tracer")
 	end
-
-	self.Hidden = false
 end
 
 function ESP:Add(obj, options)
+	if self.Unloaded then
+		return
+	end
 	options = options or {}
 	if not obj.Parent and not options.RenderInNil then
 		return warn("[ESP]", obj, "has no parent")
@@ -424,6 +533,7 @@ function ESP:Add(obj, options)
 		end
 	end
 
+	local state = {}
 	local box = setmetatable({
 		Name = options.Name or obj.Name,
 		Type = "Box",
@@ -437,21 +547,11 @@ function ESP:Add(obj, options)
 		IsEnabled = options.IsEnabled,
 		Temporary = options.Temporary,
 		RenderInNil = options.RenderInNil,
-		Components = {},
+		Components = NewComponents(state),
+		State = state,
 		Connections = {},
 		Hidden = true,
 	}, Box)
-
-	local comp = box.Components
-	comp.BoxOutline = Draw("Square", {Color = Black, Thickness = 3, Filled = false, Transparency = 1, Visible = false, ZIndex = 1})
-	comp.Box = Draw("Square", {Thickness = 1, Filled = false, Transparency = 1, Visible = false, ZIndex = 2})
-	comp.QuadOutline = Draw("Quad", {Color = Black, Thickness = 3, Filled = false, Transparency = 1, Visible = false, ZIndex = 1})
-	comp.Quad = Draw("Quad", {Thickness = 1, Filled = false, Transparency = 1, Visible = false, ZIndex = 2})
-	comp.HealthOutline = Draw("Square", {Color = Black, Filled = true, Transparency = 1, Visible = false, ZIndex = 1})
-	comp.HealthBar = Draw("Square", {Filled = true, Transparency = 1, Visible = false, ZIndex = 2})
-	comp.Name = Draw("Text", {Center = true, Outline = true, Transparency = 1, Visible = false, ZIndex = 3})
-	comp.Distance = Draw("Text", {Center = true, Outline = true, Transparency = 1, Visible = false, ZIndex = 3})
-	comp.Tracer = Draw("Line", {Thickness = 1, Transparency = 1, Visible = false, ZIndex = 2})
 
 	self.Objects[obj] = box
 
@@ -626,7 +726,10 @@ Connect(ESP.Connections, Service.RunService.RenderStepped, function()
 	for obj, box in pairs(ESP.Objects) do
 		local ok, err = pcall(box.Update, box, cam, viewport, tanHalfFov, origin)
 		if not ok then
-			warn("[ESP]", err, typeof(obj) == "Instance" and obj:GetFullName() or obj)
+			if box.LastError ~= err then
+				box.LastError = err
+				warn("[ESP]", err, typeof(obj) == "Instance" and obj:GetFullName() or obj)
+			end
 			box:Hide()
 		end
 	end
