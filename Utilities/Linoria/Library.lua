@@ -10,6 +10,10 @@ local GuiService: GuiService = cloneref(game:GetService('GuiService'));
 local HttpService: HttpService = cloneref(game:GetService('HttpService'));
 local RenderStepped = RunService.RenderStepped;
 local LocalPlayer = Players.LocalPlayer;
+while not LocalPlayer do
+	Players:GetPropertyChangedSignal('LocalPlayer'):Wait();
+	LocalPlayer = Players.LocalPlayer;
+end;
 local Mouse = LocalPlayer:GetMouse();
 
 local ProtectGui = protectgui or (syn and syn.protect_gui) or (function() end);
@@ -62,6 +66,7 @@ local Library = {
 
 	OpenedFrames = {};
 	DependencyBoxes = {};
+	PopupClosers = {};
 
 	Signals = {};
 	ScreenGui = ScreenGui;
@@ -94,24 +99,21 @@ table.insert(Library.Signals, RenderStepped:Connect(function(Delta)
 	RainbowStep = RainbowStep + Delta
 
 	if RainbowStep >= (1 / 60) then
+		Hue = (Hue + RainbowStep * 0.15) % 1;
 		RainbowStep = 0;
-
-		Hue = Hue + (1 / 400);
-
-		if Hue > 1 then
-			Hue = 0;
-		end;
 
 		Library.CurrentRainbowHue = Hue;
 		Library.CurrentRainbowColor = Color3.fromHSV(Hue, 0.8, 1);
 	end;
 end));
 
-local function GetPlayersString()
-	local PlayerList = Players:GetPlayers();
+local function GetPlayersString(Exclude)
+	local PlayerList = {};
 
-	for i = 1, #PlayerList do
-		PlayerList[i] = PlayerList[i].Name;
+	for _, Player in ipairs(Players:GetPlayers()) do
+		if Player ~= Exclude then
+			table.insert(PlayerList, Player.Name);
+		end;
 	end;
 
 	table.sort(PlayerList, function(str1, str2) return str1 < str2 end);
@@ -119,17 +121,37 @@ local function GetPlayersString()
 	return PlayerList;
 end;
 
-local function GetTeamsString()
-	local TeamList = Teams:GetTeams();
+local function GetTeamsString(Exclude)
+	local TeamList = {};
 
-	for i = 1, #TeamList do
-		TeamList[i] = TeamList[i].Name;
+	for _, Team in ipairs(Teams:GetTeams()) do
+		if Team ~= Exclude then
+			table.insert(TeamList, Team.Name);
+		end;
 	end;
 
 	table.sort(TeamList, function(str1, str2) return str1 < str2 end);
 
 	return TeamList;
 end;
+
+local function IsPointerHeld(Input)
+	if Input.UserInputType == Enum.UserInputType.Touch then
+		return Input.UserInputState ~= Enum.UserInputState.End and Input.UserInputState ~= Enum.UserInputState.Cancel;
+	end;
+
+	return InputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1);
+end;
+
+local function GetPointerPosition(Input)
+	if Input and Input.UserInputType == Enum.UserInputType.Touch then
+		return Input.Position.X, Input.Position.Y;
+	end;
+
+	return Mouse.X, Mouse.Y;
+end;
+
+local TransparencyCache = {};
 
 local function AddListener(Object, Field, Func)
 	assert(type(Func) == 'function', 'OnChanged: expected a function');
@@ -179,15 +201,22 @@ function Library:SafeCallback(f, ...)
 	Elevate();
 
 	if not Library.NotifyOnError then
-		local Results = table.pack(f(...));
+		local Results = table.pack(pcall(f, ...));
 		Elevate();
-		return table.unpack(Results, 1, Results.n);
+
+		if not Results[1] then
+			task.spawn(error, Results[2], 0);
+			return;
+		end;
+
+		return table.unpack(Results, 2, Results.n);
 	end;
 
 	local success, event = pcall(f, ...);
 	Elevate();
 
 	if not success then
+		event = tostring(event);
 		local _, i = event:find(":%d+: ");
 
 		if not i then
@@ -277,31 +306,33 @@ function Library:MakeDraggable(Instance, Cutoff)
 	if Library.IsMobile then
 		local Dragging, DraggingInput, DraggingStart, StartPosition;
 
-		InputService.TouchStarted:Connect(function(Input)
+		local function IsMenuVisible()
+			local Window = Library.Window;
+			return Window ~= nil and Window.Holder ~= nil and Window.Holder.Visible == true;
+		end;
+
+		Library:GiveSignal(InputService.TouchStarted:Connect(function(Input)
 			if Library.CantDragForced == true then
 				Dragging = false
 				return;
 			end
-			if not Dragging and Library:MouseIsOverFrame(Instance, Input) and Library.Window.Holder.Visible == true then
-				DraggingInput = Input;
-				DraggingStart = Input.Position;
-				StartPosition = Instance.Position;
-
-				local OffsetPos = Input.Position - DraggingStart;
-				if OffsetPos.Y > (Cutoff or 40) then
-					Dragging = false;
+			if not Dragging and Instance.Visible and IsMenuVisible() and Library:MouseIsOverFrame(Instance, Input) then
+				if Input.Position.Y - Instance.AbsolutePosition.Y > (Cutoff or 40) + 10 then
 					return;
 				end;
 
+				DraggingInput = Input;
+				DraggingStart = Input.Position;
+				StartPosition = Instance.Position;
 				Dragging = true;
 			end;
-		end);
-		InputService.TouchMoved:Connect(function(Input)
+		end));
+		Library:GiveSignal(InputService.TouchMoved:Connect(function(Input)
 			if Library.CantDragForced == true then
 				Dragging = false;
 				return;
 			end
-			if Input == DraggingInput and Dragging and Library.CanDrag == true and Library.Window.Holder.Visible == true then
+			if Input == DraggingInput and Dragging and Library.CanDrag == true and IsMenuVisible() then
 				local OffsetPos = Input.Position - DraggingStart;
 
 				Instance.Position = UDim2.new(
@@ -311,12 +342,12 @@ function Library:MakeDraggable(Instance, Cutoff)
 					StartPosition.Y.Offset + OffsetPos.Y
 				);
 			end;
-		end);
-		InputService.TouchEnded:Connect(function(Input)
-			if Input == DraggingInput then 
+		end));
+		Library:GiveSignal(InputService.TouchEnded:Connect(function(Input)
+			if Input == DraggingInput then
 				Dragging = false;
 			end;
-		end);
+		end));
 	end;
 end;
 
@@ -409,13 +440,18 @@ function Library:MakeResizable(Instance, MinSize)
 	end);
 end;
 
-function Library:AddToolTip(InfoStr, HoverInstance)
-	local X, Y = Library:GetTextBounds(InfoStr, Library.Font, 14);
-	local Tooltip = Library:Create('Frame', {
+local SharedTooltip = nil;
+
+local function GetSharedTooltip()
+	if SharedTooltip then
+		return SharedTooltip;
+	end;
+
+	local Frame = Library:Create('Frame', {
 		BackgroundColor3 = Library.MainColor,
 		BorderColor3 = Library.OutlineColor,
 
-		Size = UDim2.fromOffset(X + 5, Y + 4),
+		Size = UDim2.fromOffset(0, 0),
 		ZIndex = 100,
 		Parent = Library.ScreenGui,
 
@@ -424,36 +460,69 @@ function Library:AddToolTip(InfoStr, HoverInstance)
 
 	local Label = Library:CreateLabel({
 		Position = UDim2.fromOffset(3, 1),
-		Size = UDim2.fromOffset(X, Y);
+		Size = UDim2.fromOffset(0, 0);
 		TextSize = 14;
-		Text = InfoStr,
+		Text = '',
 		TextColor3 = Library.FontColor,
 		TextXAlignment = Enum.TextXAlignment.Left;
-		ZIndex = Tooltip.ZIndex + 1,
+		ZIndex = 101,
 
-		Parent = Tooltip;
+		Parent = Frame;
 	});
 
-	Library:AddToRegistry(Tooltip, {
+	Library:AddToRegistry(Frame, {
 		BackgroundColor3 = 'MainColor';
 		BorderColor3 = 'OutlineColor';
 	});
 
-	Library:AddToRegistry(Label, {
-		TextColor3 = 'FontColor',
-	});
+	SharedTooltip = { Frame = Frame; Label = Label; Owner = nil };
 
-	local function FitToFont()
-		local FitX, FitY = Library:GetTextBounds(Label.Text, Label.Font, 14);
-		Tooltip.Size = UDim2.fromOffset(FitX + 5, FitY + 4);
-		Label.Size = UDim2.fromOffset(FitX, FitY);
+	return SharedTooltip;
+end;
+
+function Library:HideToolTip()
+	if SharedTooltip then
+		SharedTooltip.Owner = nil;
+		SharedTooltip.Frame.Visible = false;
 	end;
+end;
+
+function Library:AddToolTip(InfoStr, HoverInstance)
+	local Shared = GetSharedTooltip();
+	local Tooltip, Label = Shared.Frame, Shared.Label;
+	local Token = {};
 
 	local IsHovering = false
 	local TouchShown = false
 
+	local function Claim()
+		local FitX, FitY = Library:GetTextBounds(InfoStr, Label.Font, 14);
+
+		Shared.Owner = Token;
+		Label.Text = InfoStr;
+		Tooltip.Size = UDim2.fromOffset(FitX + 5, FitY + 4);
+		Label.Size = UDim2.fromOffset(FitX, FitY);
+
+		return FitX + 5, FitY + 4;
+	end;
+
+	local function Release()
+		if Shared.Owner == Token then
+			Shared.Owner = nil;
+			Tooltip.Visible = false;
+		end;
+	end;
+
+	local function IsTouchShown()
+		if TouchShown and Shared.Owner ~= Token then
+			TouchShown = false
+		end
+
+		return TouchShown
+	end
+
 	HoverInstance.MouseEnter:Connect(function()
-		if TouchShown or Library.PickerOpen or Library:MouseIsOverOpenedFrame() then
+		if IsTouchShown() or Library.PickerOpen or Library:MouseIsOverOpenedFrame() then
 			return
 		end
 
@@ -463,40 +532,43 @@ function Library:AddToolTip(InfoStr, HoverInstance)
 
 		IsHovering = true
 
+		Claim();
 		Tooltip.Position = UDim2.fromOffset(Mouse.X + 15, Mouse.Y + 12)
-		FitToFont();
 		Tooltip.Visible = true
 
-		while IsHovering do
+		while IsHovering and Shared.Owner == Token and not Library.Unloaded do
 			RunService.Heartbeat:Wait()
+			if not IsHovering or Shared.Owner ~= Token then
+				break
+			end
 			if Library.PickerOpen then
-				IsHovering = false
-				Tooltip.Visible = false
+				Release()
 				break
 			end
 			Tooltip.Position = UDim2.fromOffset(Mouse.X + 15, Mouse.Y + 12)
 		end
+
+		IsHovering = false
 	end)
 
 	HoverInstance.MouseLeave:Connect(function()
 		IsHovering = false
-		if not TouchShown then
-			Tooltip.Visible = false
+		if not IsTouchShown() then
+			Release()
 		end
 	end)
 
 	local function HideTouchTooltip()
 		if TouchShown then
 			TouchShown = false
-			Tooltip.Visible = false
+			Release()
 		end
 	end
 
 	local function ShowTouchTooltip()
-		FitToFont();
+		local Width, Height = Claim();
 		local Screen = Library.ScreenGui.AbsoluteSize
 		local Position, Size = HoverInstance.AbsolutePosition, HoverInstance.AbsoluteSize
-		local Width, Height = Tooltip.AbsoluteSize.X, Tooltip.AbsoluteSize.Y
 
 		local X = math.clamp(Position.X, 4, math.max(4, Screen.X - Width - 4))
 		local Y = Position.Y - Height - 8
@@ -527,6 +599,10 @@ function Library:AddToolTip(InfoStr, HoverInstance)
 		local Start = Input.Position
 
 		task.delay(0.45, function()
+			if Library.Unloaded then
+				return
+			end
+
 			if Input.UserInputState == Enum.UserInputState.End or Input.UserInputState == Enum.UserInputState.Cancel then
 				return
 			end
@@ -544,16 +620,6 @@ function Library:AddToolTip(InfoStr, HoverInstance)
 			ShowTouchTooltip()
 		end)
 	end)
-
-	if LibraryMainOuterFrame then
-		LibraryMainOuterFrame:GetPropertyChangedSignal("Visible"):Connect(function() 
-			if LibraryMainOuterFrame.Visible == false then
-				IsHovering = false
-				TouchShown = false
-				Tooltip.Visible = false
-			end
-		end)
-	end
 end
 
 function Library:OnHighlight(HighlightInstance, Instance, Properties, PropertiesDefault, condition)
@@ -659,6 +725,20 @@ end;
 Library.AccentColorDark = Library:GetDarkerColor(Library.AccentColor);
 
 function Library:AddToRegistry(Instance, Properties, IsHud)
+	local Existing = Library.RegistryMap[Instance];
+
+	if Existing then
+		for Property, ColorIdx in next, Properties do
+			Existing.Properties[Property] = ColorIdx;
+		end;
+
+		if IsHud and not table.find(Library.HudRegistry, Existing) then
+			table.insert(Library.HudRegistry, Existing);
+		end;
+
+		return;
+	end;
+
 	local Idx = #Library.Registry + 1;
 	local Data = {
 		Instance = Instance;
@@ -681,12 +761,14 @@ function Library:RemoveFromRegistry(Instance)
 		for Idx = #Library.Registry, 1, -1 do
 			if Library.Registry[Idx] == Data then
 				table.remove(Library.Registry, Idx);
+				break;
 			end;
 		end;
 
 		for Idx = #Library.HudRegistry, 1, -1 do
 			if Library.HudRegistry[Idx] == Data then
 				table.remove(Library.HudRegistry, Idx);
+				break;
 			end;
 		end;
 
@@ -694,12 +776,17 @@ function Library:RemoveFromRegistry(Instance)
 	end;
 end;
 
-function Library:UpdateColorsUsingRegistry()
+function Library:UpdateColorsUsingRegistry(Fields)
+	if type(Fields) ~= 'table' then
+		Fields = nil;
+	end;
 
 	for Idx, Object in next, Library.Registry do
 		for Property, ColorIdx in next, Object.Properties do
 			if type(ColorIdx) == 'string' then
-				Object.Instance[Property] = Library[ColorIdx];
+				if not Fields or Fields[ColorIdx] then
+					Object.Instance[Property] = Library[ColorIdx];
+				end;
 			elseif type(ColorIdx) == 'function' then
 				Object.Instance[Property] = ColorIdx()
 			end
@@ -1202,10 +1289,56 @@ Library:OnUnload(function()
 end)
 
 Library:GiveSignal(ScreenGui.DescendantRemoving:Connect(function(Instance)
-	if Library.RegistryMap[Instance] then
-		Library:RemoveFromRegistry(Instance);
+	if Library.RegistryMap[Instance] == nil and TransparencyCache[Instance] == nil then
+		return;
 	end;
+
+	task.defer(function()
+		if Library.Unloaded or Instance:IsDescendantOf(ScreenGui) then
+			return;
+		end;
+
+		TransparencyCache[Instance] = nil;
+
+		if Library.RegistryMap[Instance] then
+			Library:RemoveFromRegistry(Instance);
+		end;
+	end);
 end))
+
+local KeybindResizeQueued = false;
+
+function Library:ResizeKeybindFrame()
+	if KeybindResizeQueued then
+		return;
+	end;
+
+	KeybindResizeQueued = true;
+
+	task.defer(function()
+		KeybindResizeQueued = false;
+
+		if Library.Unloaded or not Library.KeybindContainer then
+			return;
+		end;
+
+		Elevate();
+
+		local YSize = 0
+		local XSize = 0
+
+		for _, Label in next, Library.KeybindContainer:GetChildren() do
+			if Label:IsA('TextLabel') and Label.Visible then
+				YSize = YSize + 18;
+				if (Label.TextBounds.X > XSize) then
+					XSize = Label.TextBounds.X
+				end
+			end;
+		end;
+
+		Library.KeybindFrame.Size = UDim2.new(0, math.max(XSize + 10, 210), 0, YSize + 23)
+	end);
+end;
 
 local TapTracker = nil;
 
@@ -1294,6 +1427,7 @@ do
 			BorderColor3 = Color3.new(0, 0, 0);
 			Position = UDim2.fromOffset(DisplayFrame.AbsolutePosition.X, DisplayFrame.AbsolutePosition.Y + 18),
 			Size = UDim2.fromOffset(230, Info.Transparency and 271 or 253);
+			Active = true;
 			Visible = false;
 			ZIndex = 15;
 			Parent = ScreenGui,
@@ -1616,7 +1750,7 @@ do
 				if not Library.ColorClipboard then
 					return Library:Notify('You have not copied a color!', 2)
 				end
-				ColorPicker:SetValueRGB(Library.ColorClipboard)
+				ColorPicker:SetValueRGB(Library.ColorClipboard, ColorPicker.Transparency)
 				Library:AttemptSave()
 			end)
 
@@ -1626,7 +1760,7 @@ do
 			end)
 
 			ContextMenu:AddOption('Copy RGB', function()
-				pcall(setclipboard, table.concat({ math.floor(ColorPicker.Value.R * 255), math.floor(ColorPicker.Value.G * 255), math.floor(ColorPicker.Value.B * 255) }, ', '))
+				pcall(setclipboard, table.concat({ math.round(ColorPicker.Value.R * 255), math.round(ColorPicker.Value.G * 255), math.round(ColorPicker.Value.B * 255) }, ', '))
 				Library:Notify('Copied RGB values to clipboard!', 2)
 			end)
 
@@ -1668,7 +1802,11 @@ do
 			if enter then
 				local r, g, b = RgbBox.Text:match('(%d+),%s*(%d+),%s*(%d+)')
 				if r and g and b then
-					ColorPicker.Hue, ColorPicker.Sat, ColorPicker.Vib = Color3.toHSV(Color3.fromRGB(r, g, b))
+					ColorPicker.Hue, ColorPicker.Sat, ColorPicker.Vib = Color3.toHSV(Color3.fromRGB(
+						math.clamp(tonumber(r), 0, 255),
+						math.clamp(tonumber(g), 0, 255),
+						math.clamp(tonumber(b), 0, 255)
+					))
 				end
 			end
 
@@ -1685,6 +1823,11 @@ do
 				BorderColor3 = Library:GetDarkerColor(ColorPicker.Value);
 			});
 
+			local FadeCache = TransparencyCache[DisplayFrame];
+			if FadeCache and FadeCache.Values then
+				FadeCache.Values.BackgroundTransparency = ColorPicker.Transparency;
+			end;
+
 			if TransparencyBoxInner then
 				TransparencyBoxInner.BackgroundColor3 = ColorPicker.Value;
 				TransparencyCursor.Position = UDim2.new(1 - ColorPicker.Transparency, 0, 0, 0);
@@ -1694,7 +1837,7 @@ do
 			HueCursor.Position = UDim2.new(0, 0, ColorPicker.Hue, 0);
 
 			HueBox.Text = '#' .. ColorPicker.Value:ToHex()
-			RgbBox.Text = table.concat({ math.floor(ColorPicker.Value.R * 255), math.floor(ColorPicker.Value.G * 255), math.floor(ColorPicker.Value.B * 255) }, ', ')
+			RgbBox.Text = table.concat({ math.round(ColorPicker.Value.R * 255), math.round(ColorPicker.Value.G * 255), math.round(ColorPicker.Value.B * 255) }, ', ')
 
 			Library:SafeCallback(ColorPicker.Callback, ColorPicker.Value);
 			Library:SafeCallback(ColorPicker.Changed, ColorPicker.Value);
@@ -1727,6 +1870,16 @@ do
 			Library.OpenedFrames[PickerFrameOuter] = nil;
 		end;
 
+		table.insert(Library.PopupClosers, function()
+			if PickerFrameOuter.Visible then
+				ColorPicker:Hide();
+			end;
+
+			if ContextMenu.Container.Visible then
+				ContextMenu:Hide();
+			end;
+		end);
+
 		function ColorPicker:SetValue(HSV, Transparency)
 			local Color = Color3.fromHSV(HSV[1], HSV[2], HSV[3]);
 
@@ -1743,14 +1896,14 @@ do
 
 		SatVibMap.InputBegan:Connect(function(Input)
 			if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then
-				while InputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1 or Enum.UserInputType.Touch) do
+				while IsPointerHeld(Input) do
 					local MinX = SatVibMap.AbsolutePosition.X;
 					local MaxX = MinX + SatVibMap.AbsoluteSize.X;
-					local MouseX = math.clamp(Mouse.X, MinX, MaxX);
+					local MouseX = math.clamp((GetPointerPosition(Input)), MinX, MaxX);
 
 					local MinY = SatVibMap.AbsolutePosition.Y;
 					local MaxY = MinY + SatVibMap.AbsoluteSize.Y;
-					local MouseY = math.clamp(Mouse.Y, MinY, MaxY);
+					local MouseY = math.clamp(select(2, GetPointerPosition(Input)), MinY, MaxY);
 
 					ColorPicker.Sat = (MouseX - MinX) / (MaxX - MinX);
 					ColorPicker.Vib = 1 - ((MouseY - MinY) / (MaxY - MinY));
@@ -1765,10 +1918,10 @@ do
 
 		HueSelectorInner.InputBegan:Connect(function(Input)
 			if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then
-				while InputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1 or Enum.UserInputType.Touch) do
+				while IsPointerHeld(Input) do
 					local MinY = HueSelectorInner.AbsolutePosition.Y;
 					local MaxY = MinY + HueSelectorInner.AbsoluteSize.Y;
-					local MouseY = math.clamp(Mouse.Y, MinY, MaxY);
+					local MouseY = math.clamp(select(2, GetPointerPosition(Input)), MinY, MaxY);
 
 					ColorPicker.Hue = ((MouseY - MinY) / (MaxY - MinY));
 					ColorPicker:Display();
@@ -1826,10 +1979,10 @@ do
 		if TransparencyBoxInner then
 			TransparencyBoxInner.InputBegan:Connect(function(Input)
 				if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then
-					while InputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1 or Enum.UserInputType.Touch) do
+					while IsPointerHeld(Input) do
 						local MinX = TransparencyBoxInner.AbsolutePosition.X;
 						local MaxX = MinX + TransparencyBoxInner.AbsoluteSize.X;
-						local MouseX = math.clamp(Mouse.X, MinX, MaxX);
+						local MouseX = math.clamp((GetPointerPosition(Input)), MinX, MaxX);
 
 						ColorPicker.Transparency = 1 - ((MouseX - MinX) / (MaxX - MinX));
 
@@ -1846,9 +1999,10 @@ do
 		Library:GiveSignal(InputService.InputBegan:Connect(function(Input)
 			if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then
 				local AbsPos, AbsSize = PickerFrameOuter.AbsolutePosition, PickerFrameOuter.AbsoluteSize;
+				local PointerX, PointerY = GetPointerPosition(Input);
 
-				if Mouse.X < AbsPos.X or Mouse.X > AbsPos.X + AbsSize.X
-					or Mouse.Y < (AbsPos.Y - 20 - 1) or Mouse.Y > AbsPos.Y + AbsSize.Y then
+				if PointerX < AbsPos.X or PointerX > AbsPos.X + AbsSize.X
+					or PointerY < (AbsPos.Y - 20 - 1) or PointerY > AbsPos.Y + AbsSize.Y then
 
 					ColorPicker:Hide();
 				end;
@@ -1893,6 +2047,7 @@ do
 		if KeyPicker.SyncToggleState then
 			Info.Modes = { 'Toggle' }
 			Info.Mode = 'Toggle'
+			KeyPicker.Mode = 'Toggle'
 		end
 
 		local PickOuter = Library:Create('Frame', {
@@ -1937,6 +2092,10 @@ do
 
 		ToggleLabel:GetPropertyChangedSignal('AbsolutePosition'):Connect(function()
 			ModeSelectOuter.Position = UDim2.fromOffset(ToggleLabel.AbsolutePosition.X + ToggleLabel.AbsoluteSize.X + 4, ToggleLabel.AbsolutePosition.Y + 1);
+		end);
+
+		table.insert(Library.PopupClosers, function()
+			ModeSelectOuter.Visible = false;
 		end);
 
 		local ModeSelectInner = Library:Create('Frame', {
@@ -2017,33 +2176,33 @@ do
 			ModeButtons[Mode] = ModeButton;
 		end;
 
+		local LastText, LastState = nil, nil;
+
 		function KeyPicker:Update()
 			if Info.NoUI then
 				return;
 			end;
 
 			local State = KeyPicker:GetState();
+			local Text = string.format('[%s] %s (%s)', KeyPicker.Value, Info.Text, KeyPicker.Mode);
 
-			ContainerLabel.Text = string.format('[%s] %s (%s)', KeyPicker.Value, Info.Text, KeyPicker.Mode);
+			if Text == LastText and State == LastState and ContainerLabel.Visible then
+				return;
+			end;
+
+			local NeedsResize = Text ~= LastText or not ContainerLabel.Visible;
+			LastText, LastState = Text, State;
+
+			ContainerLabel.Text = Text;
 
 			ContainerLabel.Visible = true;
 			ContainerLabel.TextColor3 = State and Library.AccentColor or Library.FontColor;
 
 			Library.RegistryMap[ContainerLabel].Properties.TextColor3 = State and 'AccentColor' or 'FontColor';
 
-			local YSize = 0
-			local XSize = 0
-
-			for _, Label in next, Library.KeybindContainer:GetChildren() do
-				if Label:IsA('TextLabel') and Label.Visible then
-					YSize = YSize + 18;
-					if (Label.TextBounds.X > XSize) then
-						XSize = Label.TextBounds.X
-					end
-				end;
+			if NeedsResize then
+				Library:ResizeKeybindFrame();
 			end;
-
-			Library.KeybindFrame.Size = UDim2.new(0, math.max(XSize + 10, 210), 0, YSize + 23)
 		end;
 
 		function KeyPicker:GetState()
@@ -2060,7 +2219,11 @@ do
 					return Key == 'MB1' and InputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)
 						or Key == 'MB2' and InputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2);
 				else
-					return InputService:IsKeyDown(Enum.KeyCode[KeyPicker.Value]);
+					local Success, Code = pcall(function()
+						return Enum.KeyCode[Key];
+					end);
+
+					return Success and InputService:IsKeyDown(Code) or false;
 				end;
 			else
 				return KeyPicker.Toggled;
@@ -2069,7 +2232,10 @@ do
 
 		function KeyPicker:SetValue(Data)
 			local Key, Mode = Data[1], Data[2];
-			DisplayLabel.Text = Key;
+			if type(Key) ~= 'string' then
+				Key = KeyPicker.Value;
+			end;
+			DisplayLabel.Text = tostring(Key);
 			KeyPicker.Value = Key;
 			if ModeButtons[Mode] then ModeButtons[Mode]:Select(); end
 			KeyPicker:Update();
@@ -2136,14 +2302,20 @@ do
 						Key = 'MB2';
 					end;
 
+					if not Key then
+						return;
+					end;
+
 					Break = true;
 					Picking = false;
 
 					DisplayLabel.Text = Key;
 					KeyPicker.Value = Key;
 
-					Library:SafeCallback(KeyPicker.ChangedCallback, Input.KeyCode or Input.UserInputType)
-					Library:SafeCallback(KeyPicker.Changed, Input.KeyCode or Input.UserInputType)
+					local Picked = Input.UserInputType == Enum.UserInputType.Keyboard and Input.KeyCode or Input.UserInputType;
+
+					Library:SafeCallback(KeyPicker.ChangedCallback, Picked)
+					Library:SafeCallback(KeyPicker.Changed, Picked)
 
 					Library:AttemptSave();
 
@@ -2886,10 +3058,12 @@ do
 					end
 				end)
 				task.delay(timeout, function()
-					connection:disconnect()
+					connection:Disconnect()
 					bindable:Fire(false)
 				end)
-				return bindable.Event:Wait()
+				local result = bindable.Event:Wait()
+				bindable:Destroy()
+				return result
 			end
 
 			local function ValidateClick(Input)
@@ -3139,6 +3313,8 @@ do
 		Library:ApplyTextStroke(Box);
 
 		function Textbox:SetValue(Text)
+			Text = tostring(Text == nil and '' or Text);
+
 			if Info.MaxLength and #Text > Info.MaxLength then
 				Text = Text:sub(1, Info.MaxLength);
 			end;
@@ -3165,6 +3341,10 @@ do
 			end)
 		else
 			Box:GetPropertyChangedSignal('Text'):Connect(function()
+				if Box.Text == tostring(Textbox.Value) then
+					return;
+				end;
+
 				Textbox:SetValue(Box.Text);
 				Library:AttemptSave();
 			end);
@@ -3222,7 +3402,7 @@ do
 	end;
 
 	function Funcs:AddToggle(Idx, Info)
-		assert(Info.Text, 'AddInput: Missing `Text` string.')
+		assert(Info.Text, 'AddToggle: Missing `Text` string.')
 
 		local Toggle = {
 			Value = Info.Default or false;
@@ -3703,8 +3883,9 @@ do
 				end;
 
 				local Sides = {};
-				if Library.Window then
-					Sides = Library.Window.Tabs[Library.ActiveTab]:GetSides();
+				local ActiveTab = Library.Window and Library.Window.Tabs[Library.ActiveTab];
+				if ActiveTab then
+					Sides = ActiveTab:GetSides();
 				end
 
 				for _, Side in pairs(Sides) do
@@ -3719,7 +3900,7 @@ do
 				local gPos = Fill.AbsoluteSize.X;
 				local Diff = mPos - (Fill.AbsolutePosition.X + gPos);
 
-				while InputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1 or Enum.UserInputType.Touch) do
+				while IsPointerHeld(Input) do
 					local nMPos = Mouse.X;
 					local nXOffset = math.clamp(gPos + (nMPos - mPos) + Diff, 0, Slider.MaxSize); 
 					local nXScale = Library:MapValue(nXOffset, 0, Slider.MaxSize, 0, 1);
@@ -4022,6 +4203,10 @@ do
 			});
 
 			SearchBox:GetPropertyChangedSignal('Text'):Connect(function()
+				if SearchBox.Text == Dropdown.SearchText then
+					return;
+				end;
+
 				Dropdown.SearchText = SearchBox.Text;
 				Dropdown:BuildDropdownList();
 				Scrolling.CanvasPosition = Vector2.zero;
@@ -4147,7 +4332,11 @@ do
 			CommitChange();
 		end;
 
-		function Dropdown:BuildDropdownList()
+		local ListDirty = true;
+
+		local function RebuildList()
+			ListDirty = false;
+
 			local Values = Dropdown:GetDisplayValues();
 			local Buttons = {};
 			CurrentButtons = Buttons;
@@ -4197,12 +4386,6 @@ do
 
 				local Selected;
 
-				if Info.Multi then
-					Selected = Dropdown.Value[Value];
-				else
-					Selected = Dropdown.Value == Value;
-				end;
-
 				function Table:UpdateButton()
 					if Info.Multi then
 						Selected = Dropdown.Value[Value];
@@ -4227,7 +4410,6 @@ do
 				end);
 
 				Table:UpdateButton();
-				Dropdown:Display();
 
 				Buttons[Button] = Table;
 			end;
@@ -4239,6 +4421,16 @@ do
 
 			local Y = math.clamp(Count * ITEM_HEIGHT, 0, MAX_DROPDOWN_ITEMS * ITEM_HEIGHT) + 1 + HeaderHeight;
 			RecalculateListSize(Y);
+		end;
+
+		function Dropdown:BuildDropdownList()
+			Dropdown:Display();
+
+			if ListOuter.Visible then
+				RebuildList();
+			else
+				ListDirty = true;
+			end;
 
 			if MobilePicker.Owner == Dropdown then
 				MobilePicker:Refresh();
@@ -4271,8 +4463,12 @@ do
 			DropdownArrow.Rotation = 180;
 
 			if SearchBox then
-				SearchBox.Text = '';
+				if Dropdown.SearchText ~= '' then
+					ListDirty = true;
+				end;
+
 				Dropdown.SearchText = '';
+				SearchBox.Text = '';
 				if not Library.IsMobile then
 					task.defer(function()
 						if ListOuter.Visible then
@@ -4282,7 +4478,11 @@ do
 				end;
 			end;
 
-			RecalculateListSize();
+			if ListDirty then
+				RebuildList();
+			else
+				RecalculateListSize();
+			end;
 		end;
 
 		function Dropdown:CloseDropdown()
@@ -4317,7 +4517,7 @@ do
 			if Dropdown.Multi then
 				local nTable = {};
 
-				for Value, Bool in next, Val do
+				for Value, Bool in next, (type(Val) == 'table' and Val or {}) do
 					if table.find(Dropdown.Values, Value) then
 						nTable[Value] = true
 					end;
@@ -4334,6 +4534,7 @@ do
 
 			Dropdown:BuildDropdownList();
 
+			Library:UpdateDependencyBoxes();
 			Library:SafeCallback(Dropdown.Callback, Dropdown.Value);
 			Library:SafeCallback(Dropdown.Changed, Dropdown.Value);
 		end;
@@ -4354,21 +4555,22 @@ do
 			end;
 		end);
 
-		InputService.InputBegan:Connect(function(Input)
+		Library:GiveSignal(InputService.InputBegan:Connect(function(Input)
 			if not ListOuter.Visible then
 				return;
 			end;
 
 			if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then
 				local AbsPos, AbsSize = ListOuter.AbsolutePosition, ListOuter.AbsoluteSize;
+				local PointerX, PointerY = GetPointerPosition(Input);
 
-				if Mouse.X < AbsPos.X or Mouse.X > AbsPos.X + AbsSize.X
-					or Mouse.Y < (AbsPos.Y - 20 - 1) or Mouse.Y > AbsPos.Y + AbsSize.Y then
+				if PointerX < AbsPos.X or PointerX > AbsPos.X + AbsSize.X
+					or PointerY < (AbsPos.Y - Library.ElementHeight - 1) or PointerY > AbsPos.Y + AbsSize.Y then
 
 					Dropdown:CloseDropdown();
 				end;
 			end;
-		end);
+		end));
 
 		Dropdown:BuildDropdownList();
 		Dropdown:Display();
@@ -4622,8 +4824,6 @@ do
 		ZIndex = 104;
 		Parent = KeybindInner;
 	});
-	Library:MakeDraggable(KeybindOuter);
-
 	local KeybindContainer = Library:Create('Frame', {
 		BackgroundTransparency = 1;
 		Size = UDim2.new(1, 0, 1, -20);
@@ -4674,6 +4874,10 @@ local function escapeRich(Str)
 end;
 
 function Library:Notify(Text, Time, SoundId)
+	if Library.Unloaded then
+		return { Close = function() end };
+	end;
+
 	Text = tostring(Text);
 	if Text:lower():find('to hide', 1, true) then
 		Library.HideNotified = true;
@@ -4769,7 +4973,7 @@ function Library:Notify(Text, Time, SoundId)
 			SoundId = "rbxassetid://" .. tostring(SoundId):gsub("rbxassetid://", "");
 			Volume = 3;
 			PlayOnRemove = true;
-			Parent = game:GetService("SoundService");
+			Parent = cloneref(game:GetService('SoundService'));
 		}):Destroy();
 	end
 
@@ -5122,8 +5326,8 @@ function Library:CreateWindow(...)
 	local Arguments = { ... }
 	local Config = { AnchorPoint = Vector2.zero }
 
-	if type(...) == 'table' then
-		Config = ...;
+	if type(Arguments[1]) == 'table' then
+		Config = Arguments[1];
 	else
 		Config.Title = Arguments[1]
 		Config.AutoShow = Arguments[2] or false;
@@ -5170,6 +5374,12 @@ function Library:CreateWindow(...)
 		Parent = ScreenGui;
 	});
 	LibraryMainOuterFrame = Outer;
+
+	Outer:GetPropertyChangedSignal('Visible'):Connect(function()
+		if not Outer.Visible then
+			Library:HideToolTip();
+		end;
+	end);
 	Library:MakeDraggable(Outer, 25);
 
 	if Config.Resizable then
@@ -5320,7 +5530,7 @@ function Library:CreateWindow(...)
 			BorderSizePixel = 0;
 			Position = UDim2.new(0, 0, 1, 0);
 			Size = UDim2.new(1, 0, 0, 1);
-			BackgroundTransparency = 1;
+			Visible = false;
 			ZIndex = 3;
 			Parent = TabButton;
 		});
@@ -5429,14 +5639,14 @@ function Library:CreateWindow(...)
 				Tab:HideTab();
 			end;
 
-			Blocker.BackgroundTransparency = 0;
+			Blocker.Visible = true;
 			TabButton.BackgroundColor3 = Library.MainColor;
 			Library.RegistryMap[TabButton].Properties.BackgroundColor3 = 'MainColor';
 			TabFrame.Visible = true;
 		end;
 
 		function Tab:HideTab()
-			Blocker.BackgroundTransparency = 1;
+			Blocker.Visible = false;
 			TabButton.BackgroundColor3 = Library.BackgroundColor;
 			Library.RegistryMap[TabButton].Properties.BackgroundColor3 = 'BackgroundColor';
 			TabFrame.Visible = false;
@@ -5786,7 +5996,6 @@ function Library:CreateWindow(...)
 		Parent = ScreenGui;
 	});
 
-	local TransparencyCache = {};
 	local Toggled = false;
 	local Fading = false;
 
@@ -5844,41 +6053,87 @@ function Library:CreateWindow(...)
 			end
 		end
 
+		for _, Close in ipairs(Library.PopupClosers) do
+			pcall(Close);
+		end
+
+		Library:HideToolTip();
+
+		local FadeInfo = TweenInfo.new(FadeTime, Enum.EasingStyle.Linear);
+		local Instant = FadeTime <= 0;
+		local Finalize = {};
+
 		for _, Desc in next, Outer:GetDescendants() do
-			local Properties = {};
-
-			if Desc:IsA('ImageLabel') then
-				table.insert(Properties, 'ImageTransparency');
-				table.insert(Properties, 'BackgroundTransparency');
-			elseif Desc:IsA('TextLabel') or Desc:IsA('TextBox') then
-				table.insert(Properties, 'TextTransparency');
-			elseif Desc:IsA('Frame') or Desc:IsA('ScrollingFrame') then
-				table.insert(Properties, 'BackgroundTransparency');
-			elseif Desc:IsA('UIStroke') then
-				table.insert(Properties, 'Transparency');
-			end;
-
 			local Cache = TransparencyCache[Desc];
 
-			if (not Cache) then
-				Cache = {};
+			if Cache == nil then
+				local Properties = false;
+
+				if Desc:IsA('ImageLabel') then
+					Properties = { 'ImageTransparency', 'BackgroundTransparency' };
+				elseif Desc:IsA('TextLabel') or Desc:IsA('TextBox') then
+					Properties = { 'TextTransparency' };
+				elseif Desc:IsA('Frame') or Desc:IsA('ScrollingFrame') then
+					Properties = { 'BackgroundTransparency' };
+				elseif Desc:IsA('UIStroke') then
+					Properties = { 'Transparency' };
+				end;
+
+				Cache = { Properties = Properties; Values = {} };
 				TransparencyCache[Desc] = Cache;
+
+				if Properties then
+					for _, Prop in next, Properties do
+						Cache.Values[Prop] = Desc[Prop];
+					end;
+				end;
+			elseif Cache.Properties and not Toggled then
+				for _, Prop in next, Cache.Properties do
+					Cache.Values[Prop] = Desc[Prop];
+				end;
 			end;
 
-			for _, Prop in next, Properties do
-				if not Cache[Prop] then
-					Cache[Prop] = Desc[Prop];
+			if Cache.Properties then
+				local Goal = nil;
+
+				for _, Prop in next, Cache.Properties do
+					local Value = Cache.Values[Prop];
+
+					if Value ~= 1 then
+						Goal = Goal or {};
+						Goal[Prop] = Toggled and Value or 1;
+					end;
 				end;
 
-				if Cache[Prop] == 1 then
-					continue;
-				end;
+				if Goal then
+					if Instant then
+						for Prop, Value in next, Goal do
+							Desc[Prop] = Value;
+						end;
+					else
+						TweenService:Create(Desc, FadeInfo, Goal):Play();
 
-				TweenService:Create(Desc, TweenInfo.new(FadeTime, Enum.EasingStyle.Linear), { [Prop] = Toggled and Cache[Prop] or 1 }):Play();
+						if Toggled then
+							Finalize[Desc] = Cache;
+						end;
+					end;
+				end;
 			end;
 		end;
 
 		task.wait(FadeTime);
+
+		if Toggled then
+			for Desc, Cache in next, Finalize do
+				for _, Prop in next, Cache.Properties do
+					local Value = Cache.Values[Prop];
+
+					if Value ~= 1 then
+						Desc[Prop] = Value;
+					end;
+				end;
+			end;
+		end;
 
 		Outer.Visible = Toggled;
 
@@ -6162,8 +6417,8 @@ function Library:CreateWindow(...)
 	return Window;
 end;
 
-local function OnPlayerChange()
-	local PlayerList = GetPlayersString();
+local function OnPlayerChange(Leaving)
+	local PlayerList = GetPlayersString(Leaving);
 
 	for _, Value in next, table.clone(Options) do
 		if Value.Type == 'Dropdown' and Value.SpecialType == 'Player' then
@@ -6172,8 +6427,32 @@ local function OnPlayerChange()
 	end;
 end;
 
-Library:GiveSignal(Players.PlayerAdded:Connect(OnPlayerChange));
-Library:GiveSignal(Players.PlayerRemoving:Connect(OnPlayerChange));
+local function OnTeamChange(Leaving)
+	local TeamList = GetTeamsString(Leaving);
+
+	for _, Value in next, table.clone(Options) do
+		if Value.Type == 'Dropdown' and Value.SpecialType == 'Team' then
+			Value:SetValues(TeamList);
+		end;
+	end;
+end;
+
+Library:GiveSignal(Players.PlayerAdded:Connect(function()
+	OnPlayerChange();
+end));
+Library:GiveSignal(Players.PlayerRemoving:Connect(function(Player)
+	OnPlayerChange(Player);
+end));
+Library:GiveSignal(Teams.ChildAdded:Connect(function(Child)
+	if Child:IsA('Team') then
+		OnTeamChange();
+	end;
+end));
+Library:GiveSignal(Teams.ChildRemoved:Connect(function(Child)
+	if Child:IsA('Team') then
+		OnTeamChange(Child);
+	end;
+end));
 
 getgenv().Library = Library
 return Library
